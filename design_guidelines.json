@@ -1,0 +1,132 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 5 (Jewel & Luxury) mixed with Archetype 2 (Performance Pro)",
+  "colors": {
+    "background": "#050505",
+    "surface": "#121212",
+    "surface_elevated": "#1A1A1A",
+    "primary": "#D4AF37",
+    "primary_glow": "rgba(212, 175, 55, 0.4)",
+    "accent": "#F59E0B",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A1A1AA",
+    "border": "#27272A",
+    "success": "#10B981",
+    "error": "#EF4444",
+    "water": "#38BDF8"
+  },
+  "typography": {
+    "headings": "Outfit",
+    "body": "Inter",
+    "scale": {
+      "h1": "text-4xl font-bold tracking-tight text-white",
+      "h2": "text-3xl font-semibold tracking-tight text-white",
+      "h3": "text-2xl font-medium text-white",
+      "h4": "text-xl font-medium text-white",
+      "body_large": "text-lg text-zinc-300",
+      "body": "text-base text-zinc-400",
+      "small": "text-sm text-zinc-500 uppercase tracking-widest"
+    }
+  },
+  "spacing_and_layout": {
+    "screen_padding": "px-6 py-8",
+    "card_padding": "p-5",
+    "gap_large": "gap-8",
+    "gap_medium": "gap-4",
+    "border_radius": {
+      "card": "rounded-2xl",
+      "button": "rounded-full",
+      "input": "rounded-xl"
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#D4AF37] text-black font-semibold rounded-full py-4 px-6 active:opacity-80 flex-row items-center justify-center",
+      "secondary": "bg-transparent border border-[#D4AF37] text-[#D4AF37] rounded-full py-4 px-6 active:bg-[#D4AF37]/10 flex-row items-center justify-center"
+    },
+    "cards": {
+      "default": "bg-[#121212] rounded-2xl border border-zinc-800 p-5 shadow-lg",
+      "glass": "bg-black/60 overflow-hidden border border-white/10 rounded-2xl"
+    },
+    "inputs": {
+      "default": "bg-[#0A0A0A] border border-zinc-800 text-white rounded-xl px-4 py-4 focus:border-[#D4AF37] text-base"
+    },
+    "progress_rings": {
+      "track": "stroke-zinc-800",
+      "fill": "stroke-[#D4AF37]"
+    }
+  },
+  "screens": {
+    "auth": {
+      "background_image": "https://images.pexels.com/photos/21031387/pexels-photo-21031387.jpeg",
+      "overlay": "bg-black/80 absolute inset-0",
+      "notes": "Use a full-screen luxury abstract background with a heavy dark overlay to ensure text readability. Inputs should be translucent."
+    },
+    "onboarding_quiz": {
+      "layout": "Step-based card selection with large hit areas.",
+      "progress_bar": "Gold fill over dark zinc track.",
+      "cards": "Selectable cards with gold border when selected (`border-[#D4AF37] bg-[#D4AF37]/10`). Unselected state is standard surface color."
+    },
+    "dashboard": {
+      "workout_card": "Uses a background image of an aesthetic dark gym with a gradient overlay. Large bold typography for the workout name. Card should span full width.",
+      "water_tracker": "Circular progress ring in light blue (#38BDF8) to contrast with gold, or matching gold if strictly monochrome. Include a glass icon.",
+      "calorie_tracker": "Horizontal progress bar in gold.",
+      "reminders": "Vertical timeline layout with gold dots indicating active reminders (Wake, Workout, Meal, Sleep)."
+    },
+    "ai_coach": {
+      "avatar": "https://images.pexels.com/photos/13337440/pexels-photo-13337440.png",
+      "user_bubble": "bg-[#D4AF37] text-black rounded-2xl rounded-tr-sm px-4 py-3 ml-10",
+      "ai_bubble": "bg-[#121212] border border-zinc-800 text-white rounded-2xl rounded-tl-sm px-4 py-3 mr-10"
+    },
+    "shop": {
+      "layout": "2-column bento grid for products.",
+      "card": "bg-[#121212] rounded-2xl overflow-hidden. Image at top with dark background, text below.",
+      "cta": "Small 'Buy Now' button in gold."
+    }
+  },
+  "image_urls": [
+    {
+      "category": "auth_background",
+      "url": "https://images.pexels.com/photos/21031387/pexels-photo-21031387.jpeg",
+      "description": "Luxurious abstract gold/black waves for auth/login screens."
+    },
+    {
+      "category": "dashboard_workout_bg",
+      "url": "https://images.pexels.com/photos/29392549/pexels-photo-29392549.jpeg",
+      "description": "Sleek industrial gym background for the 'Today's Workout' card."
+    },
+    {
+      "category": "ai_coach_avatar",
+      "url": "https://images.pexels.com/photos/13337440/pexels-photo-13337440.png",
+      "description": "Elegant 3D gold geometric sphere for the AI bot avatar."
+    },
+    {
+      "category": "product_supplements",
+      "url": "https://images.pexels.com/photos/29107657/pexels-photo-29107657.jpeg",
+      "description": "Saw palmetto / multivitamin bottles."
+    },
+    {
+      "category": "product_collagen",
+      "url": "https://images.pexels.com/photos/29107585/pexels-photo-29107585.jpeg",
+      "description": "Collagen supplement bottle."
+    },
+    {
+      "category": "product_creatine",
+      "url": "https://images.pexels.com/photos/14963236/pexels-photo-14963236.jpeg",
+      "description": "Gym floor with gloves (use for general fitness gear if needed)."
+    }
+  ],
+  "accessibility_and_interactions": {
+    "test_ids": "MANDATORY. Add `data-testid` to all interactive elements, inputs, and key text nodes (e.g. `data-testid='login-button'`).",
+    "contrast": "Ensure text over images uses a dark gradient overlay. Minimum `#000000` at 60% opacity.",
+    "touch_targets": "Minimum 48x48px for all pressables to ensure mobile accessibility."
+  },
+  "instructions_to_main_agent": [
+    "This is a React Native Expo project. Use NativeWind classes suitable for mobile.",
+    "Do not use `hover:` classes. Use `active:` for press states.",
+    "For the bottom tab navigation, use a dark bar `#0A0A0A` with gold `#D4AF37` for the active tab icon.",
+    "Use Lucide-React-Native for icons.",
+    "Follow the luxury dark theme strictly. No bright white backgrounds anywhere. The app should feel like an exclusive VIP fitness club.",
+    "Build the dashboard rings using react-native-svg or expo-progress."
+  ]
+}
