@@ -184,62 +184,91 @@ def calc_water_glasses(weight_kg: float) -> int:
     return max(6, round((weight_kg * 35) / 250))
 
 
-# ----------------------- Exercise & Workout Library -----------------------
-def _vid(mid: str) -> str:
-    return f"https://assets.mixkit.co/videos/{mid}/{mid}-360.mp4"
+# ----------------------- Exercise Library -----------------------
+# Each exercise opens a YouTube search for "<query>" — guarantees an accurate
+# tutorial for every movement (free stock libraries lack many gym lifts).
+def _yt(query: str) -> str:
+    from urllib.parse import quote
+    return f"https://www.youtube.com/results?search_query={quote(query)}"
 
 
-def _thumb(mid: str) -> str:
-    return f"https://assets.mixkit.co/videos/{mid}/{mid}-thumb-360-0.jpg"
+# Curated still images per movement family (Pexels, free)
+IMG_PUSH = "https://images.pexels.com/photos/4944966/pexels-photo-4944966.jpeg?w=600"
+IMG_PULL = "https://images.pexels.com/photos/4775204/pexels-photo-4775204.jpeg?w=600"
+IMG_LEGS = "https://images.pexels.com/photos/4720236/pexels-photo-4720236.jpeg?w=600"
+IMG_CORE = "https://images.pexels.com/photos/3076509/pexels-photo-3076509.jpeg?w=600"
+IMG_CARDIO = "https://images.pexels.com/photos/4498151/pexels-photo-4498151.jpeg?w=600"
+IMG_BARBELL = "https://images.pexels.com/photos/1552242/pexels-photo-1552242.jpeg?w=600"
+IMG_DUMBBELL = "https://images.pexels.com/photos/1229356/pexels-photo-1229356.jpeg?w=600"
+IMG_KETTLE = "https://images.pexels.com/photos/3253501/pexels-photo-3253501.jpeg?w=600"
 
 
-# (id, name, video, thumb, default sets x reps, instruction)
+# (id, name, thumb, default sets x reps, instruction, youtube search query)
 EXERCISES: Dict[str, Dict[str, Any]] = {
-    # Bodyweight / calisthenics
-    "pushup": {"name": "Push-ups", "video": _vid("32308"), "thumb": _thumb("32308"),
-               "default": "3 x 10-15", "tip": "Keep core tight, elbows ~45°."},
-    "diamond_pushup": {"name": "Diamond push-ups", "video": _vid("24277"), "thumb": _thumb("24277"),
-                       "default": "3 x 8-12", "tip": "Hands together to hit triceps."},
-    "incline_pushup": {"name": "Incline push-ups", "video": _vid("11544"), "thumb": _thumb("11544"),
-                       "default": "3 x 12-15", "tip": "Easier — great for beginners."},
-    "pullup": {"name": "Pull-ups", "video": _vid("8770"), "thumb": _thumb("8770"),
-               "default": "3 x 5-8", "tip": "Full range, no kipping."},
-    "bw_squat": {"name": "Bodyweight squats", "video": _vid("21273"), "thumb": _thumb("21273"),
-                 "default": "3 x 15-20", "tip": "Knees track toes, hip crease below knee."},
-    "lunge": {"name": "Lunges", "video": _vid("49038"), "thumb": _thumb("49038"),
-              "default": "3 x 10/leg", "tip": "Step long, drive through front heel."},
-    "plank": {"name": "Plank hold", "video": _vid("15079"), "thumb": _thumb("15079"),
-              "default": "3 x 30-60s", "tip": "Brace core, glutes squeezed."},
-    "burpee": {"name": "Burpees", "video": _vid("11542"), "thumb": _thumb("11542"),
-               "default": "3 x 8-12", "tip": "Explosive — full body conditioner."},
-    "dip": {"name": "Tricep dips", "video": _vid("32320"), "thumb": _thumb("32320"),
-            "default": "3 x 10-12", "tip": "Use a bench or parallel bars."},
-    "mountain_climber": {"name": "Mountain climbers", "video": _vid("14065"), "thumb": _thumb("14065"),
-                         "default": "3 x 30s", "tip": "Hips stable, fast knees."},
-    "jumping_jack": {"name": "Jumping jacks", "video": _vid("4525"), "thumb": _thumb("4525"),
-                     "default": "3 x 45s", "tip": "Great warm-up cardio."},
+    "pushup": {"name": "Push-ups", "thumb": IMG_PUSH,
+               "default": "3 x 10-15", "tip": "Keep core tight, elbows ~45°.",
+               "search": "perfect push up form tutorial"},
+    "diamond_pushup": {"name": "Diamond push-ups", "thumb": IMG_PUSH,
+                       "default": "3 x 8-12", "tip": "Hands together to hit triceps.",
+                       "search": "diamond push up form tutorial"},
+    "incline_pushup": {"name": "Incline push-ups", "thumb": IMG_PUSH,
+                       "default": "3 x 12-15", "tip": "Easier — great for beginners.",
+                       "search": "incline push up form tutorial"},
+    "pullup": {"name": "Pull-ups", "thumb": IMG_PULL,
+               "default": "3 x 5-8", "tip": "Full range, no kipping.",
+               "search": "pull up proper form tutorial"},
+    "bw_squat": {"name": "Bodyweight squats", "thumb": IMG_LEGS,
+                 "default": "3 x 15-20", "tip": "Knees track toes, hip crease below knee.",
+                 "search": "bodyweight squat proper form"},
+    "lunge": {"name": "Lunges", "thumb": IMG_LEGS,
+              "default": "3 x 10/leg", "tip": "Step long, drive through front heel.",
+              "search": "forward lunge proper form tutorial"},
+    "plank": {"name": "Plank hold", "thumb": IMG_CORE,
+              "default": "3 x 30-60s", "tip": "Brace core, glutes squeezed.",
+              "search": "plank proper form tutorial"},
+    "burpee": {"name": "Burpees", "thumb": IMG_CARDIO,
+               "default": "3 x 8-12", "tip": "Explosive — full body conditioner.",
+               "search": "burpee proper form tutorial"},
+    "dip": {"name": "Tricep dips", "thumb": IMG_PUSH,
+            "default": "3 x 10-12", "tip": "Use a bench or parallel bars.",
+            "search": "tricep dip proper form bench"},
+    "mountain_climber": {"name": "Mountain climbers", "thumb": IMG_CARDIO,
+                         "default": "3 x 30s", "tip": "Hips stable, fast knees.",
+                         "search": "mountain climber proper form tutorial"},
+    "jumping_jack": {"name": "Jumping jacks", "thumb": IMG_CARDIO,
+                     "default": "3 x 45s", "tip": "Great warm-up cardio.",
+                     "search": "jumping jacks proper form"},
 
-    # Gym-style — reuse closest matching free clips
-    "back_squat": {"name": "Back squat", "video": _vid("52117"), "thumb": _thumb("52117"),
-                   "default": "4 x 6-8", "tip": "Brace core, drive through midfoot."},
-    "deadlift": {"name": "Deadlift", "video": _vid("52099"), "thumb": _thumb("52099"),
-                 "default": "4 x 5", "tip": "Neutral spine, bar close to body."},
-    "bench_press": {"name": "Bench press", "video": _vid("32308"), "thumb": _thumb("32308"),
-                    "default": "4 x 6-8", "tip": "Retract scapulae, controlled descent."},
-    "overhead_press": {"name": "Overhead press", "video": _vid("44422"), "thumb": _thumb("44422"),
-                       "default": "4 x 6-8", "tip": "Glutes tight, press straight up."},
-    "row": {"name": "Barbell row", "video": _vid("44425"), "thumb": _thumb("44425"),
-            "default": "4 x 8", "tip": "Hinge to ~45°, pull to lower chest."},
-    "lat_pulldown": {"name": "Lat pulldown", "video": _vid("24277"), "thumb": _thumb("24277"),
-                     "default": "4 x 10", "tip": "Drive elbows down and back."},
-    "db_curl": {"name": "Dumbbell curl", "video": _vid("44423"), "thumb": _thumb("44423"),
-                "default": "3 x 10-12", "tip": "Elbows pinned, no swing."},
-    "tricep_pushdown": {"name": "Tricep pushdown", "video": _vid("44424"), "thumb": _thumb("44424"),
-                        "default": "3 x 10-12", "tip": "Lock elbows by ribs."},
-    "leg_press": {"name": "Leg press", "video": _vid("23913"), "thumb": _thumb("23913"),
-                  "default": "4 x 10", "tip": "Don't lock knees at top."},
-    "kettlebell_swing": {"name": "Kettlebell swing", "video": _vid("727"), "thumb": _thumb("727"),
-                         "default": "4 x 15", "tip": "Hip hinge — power from hips, not arms."},
+    "back_squat": {"name": "Back squat", "thumb": IMG_BARBELL,
+                   "default": "4 x 6-8", "tip": "Brace core, drive through midfoot.",
+                   "search": "barbell back squat proper form"},
+    "deadlift": {"name": "Deadlift", "thumb": IMG_BARBELL,
+                 "default": "4 x 5", "tip": "Neutral spine, bar close to body.",
+                 "search": "conventional deadlift proper form"},
+    "bench_press": {"name": "Bench press", "thumb": IMG_BARBELL,
+                    "default": "4 x 6-8", "tip": "Retract scapulae, controlled descent.",
+                    "search": "barbell bench press proper form"},
+    "overhead_press": {"name": "Overhead press", "thumb": IMG_BARBELL,
+                       "default": "4 x 6-8", "tip": "Glutes tight, press straight up.",
+                       "search": "overhead press proper form barbell"},
+    "row": {"name": "Barbell row", "thumb": IMG_BARBELL,
+            "default": "4 x 8", "tip": "Hinge to ~45°, pull to lower chest.",
+            "search": "barbell row proper form"},
+    "lat_pulldown": {"name": "Lat pulldown", "thumb": IMG_PULL,
+                     "default": "4 x 10", "tip": "Drive elbows down and back.",
+                     "search": "lat pulldown proper form"},
+    "db_curl": {"name": "Dumbbell curl", "thumb": IMG_DUMBBELL,
+                "default": "3 x 10-12", "tip": "Elbows pinned, no swing.",
+                "search": "dumbbell biceps curl proper form"},
+    "tricep_pushdown": {"name": "Tricep pushdown", "thumb": IMG_DUMBBELL,
+                        "default": "3 x 10-12", "tip": "Lock elbows by ribs.",
+                        "search": "tricep pushdown proper form cable"},
+    "leg_press": {"name": "Leg press", "thumb": IMG_LEGS,
+                  "default": "4 x 10", "tip": "Don't lock knees at top.",
+                  "search": "leg press proper form tutorial"},
+    "kettlebell_swing": {"name": "Kettlebell swing", "thumb": IMG_KETTLE,
+                         "default": "4 x 15", "tip": "Hip hinge — power from hips, not arms.",
+                         "search": "kettlebell swing proper form tutorial"},
 }
 
 
@@ -248,8 +277,8 @@ def _ex(eid: str, sets_reps: Optional[str] = None) -> Dict[str, Any]:
     return {
         "id": eid,
         "name": base["name"],
-        "video": base["video"],
         "thumb": base["thumb"],
+        "demo_url": _yt(base["search"]),
         "sets_reps": sets_reps or base["default"],
         "tip": base["tip"],
     }
@@ -408,7 +437,7 @@ def build_reminders(quiz: dict) -> List[Dict[str, str]]:
         hydration_min = 16 * 60
         dinner_min = 19 * 60 + 30
 
-    return [
+    items = [
         {"id": "wake", "label": "Wake up & hydrate", "time": wake, "icon": "sun"},
         {"id": "breakfast", "label": "Breakfast", "time": _to_hhmm(breakfast_min), "icon": "coffee"},
         {"id": "workout", "label": workout_label, "time": _to_hhmm(workout_min), "icon": "dumbbell"},
@@ -417,6 +446,7 @@ def build_reminders(quiz: dict) -> List[Dict[str, str]]:
         {"id": "dinner", "label": "Dinner", "time": _to_hhmm(dinner_min), "icon": "utensils"},
         {"id": "sleep", "label": "Wind down & sleep", "time": sleep, "icon": "moon"},
     ]
+    return sorted(items, key=lambda r: _to_min(r["time"]))
 
 
 @api_router.post("/quiz/submit")
@@ -451,6 +481,15 @@ async def get_plan(user: dict = Depends(get_current_user)):
     plan = await db.plans.find_one({"user_id": user["id"]}, {"_id": 0})
     if not plan:
         raise HTTPException(status_code=404, detail="No plan yet — complete the quiz")
+    # Always rebuild structured workout & reminder schedule from saved quiz answers
+    # so existing users get the latest exercise library / scheduling tweaks.
+    quiz = plan.get("quiz") or {}
+    if quiz:
+        plan["workout_schedule"] = build_workout_schedule(
+            quiz.get("workout_style", "gym"),
+            int(quiz.get("workout_days_per_week", 3)),
+        )
+        plan["reminders"] = build_reminders(quiz)
     return plan
 
 
@@ -465,6 +504,7 @@ async def get_today(user: dict = Depends(get_current_user)):
     log = await db.daily_logs.find_one(
         {"user_id": user["id"], "date": today_key()}, {"_id": 0}
     ) or {"water_glasses": 0, "calories_consumed": 0, "meals": []}
+    reminders = build_reminders(plan["quiz"]) if plan and plan.get("quiz") else []
     return {
         "date": today_key(),
         "water_glasses": log.get("water_glasses", 0),
@@ -472,7 +512,7 @@ async def get_today(user: dict = Depends(get_current_user)):
         "calories_consumed": log.get("calories_consumed", 0),
         "calorie_target": plan["calorie_target"] if plan else 2000,
         "meals": log.get("meals", []),
-        "reminders": plan["reminders"] if plan else [],
+        "reminders": reminders,
     }
 
 
