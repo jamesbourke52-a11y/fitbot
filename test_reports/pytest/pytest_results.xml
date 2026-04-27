@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="15" time="26.741" timestamp="2026-04-27T19:02:05.332378+00:00" hostname="agent-env-9f7932bd-fbea-4de2-b328-7204bf0f6ed6"><testcase classname="backend.tests.test_fitlux_api" name="test_root" time="0.318" /><testcase classname="backend.tests.test_fitlux_api" name="test_register_returns_token_and_user" time="0.283"><failure message="AssertionError: assert 'test_user_bf...7@example.com' == 'TEST_user_bf...7@example.com'&#10;  &#10;  - TEST_user_bf9fbe17@example.com&#10;  ? ^^^^&#10;  + test_user_bf9fbe17@example.com&#10;  ? ^^^^">backend/tests/test_fitlux_api.py:47: in test_register_returns_token_and_user
+    assert test_user["user"]["email"] == test_user["email"]
+E   AssertionError: assert 'test_user_bf...7@example.com' == 'TEST_user_bf...7@example.com'
+E     
+E     - TEST_user_bf9fbe17@example.com
+E     ? ^^^^
+E     + test_user_bf9fbe17@example.com
+E     ? ^^^^</failure></testcase><testcase classname="backend.tests.test_fitlux_api" name="test_register_duplicate_rejected" time="0.159" /><testcase classname="backend.tests.test_fitlux_api" name="test_login_admin" time="0.287" /><testcase classname="backend.tests.test_fitlux_api" name="test_login_invalid" time="0.274" /><testcase classname="backend.tests.test_fitlux_api" name="test_me_requires_auth" time="0.052" /><testcase classname="backend.tests.test_fitlux_api" name="test_me_with_token" time="0.065"><failure message="AssertionError: assert 'test_user_bf...7@example.com' == 'TEST_user_bf...7@example.com'&#10;  &#10;  - TEST_user_bf9fbe17@example.com&#10;  ? ^^^^&#10;  + test_user_bf9fbe17@example.com&#10;  ? ^^^^">backend/tests/test_fitlux_api.py:82: in test_me_with_token
+    assert r.json()["email"] == test_user["email"]
+E   AssertionError: assert 'test_user_bf...7@example.com' == 'TEST_user_bf...7@example.com'
+E     
+E     - TEST_user_bf9fbe17@example.com
+E     ? ^^^^
+E     + test_user_bf9fbe17@example.com
+E     ? ^^^^</failure></testcase><testcase classname="backend.tests.test_fitlux_api" name="test_products_list" time="0.062" /><testcase classname="backend.tests.test_fitlux_api" name="test_quiz_submit_generates_ai_plan" time="17.817" /><testcase classname="backend.tests.test_fitlux_api" name="test_get_plan_persisted" time="0.059" /><testcase classname="backend.tests.test_fitlux_api" name="test_me_after_quiz_has_flag" time="0.054" /><testcase classname="backend.tests.test_fitlux_api" name="test_tracker_today" time="0.075" /><testcase classname="backend.tests.test_fitlux_api" name="test_tracker_water_increments" time="0.166" /><testcase classname="backend.tests.test_fitlux_api" name="test_tracker_calories_adds_meal" time="0.109" /><testcase classname="backend.tests.test_fitlux_api" name="test_coach_chat_and_history" time="6.718" /></testsuite></testsuites>
