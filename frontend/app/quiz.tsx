@@ -29,11 +29,24 @@ const STEPS = [
   { key: "workout_days_per_week", title: "Workout days/week?", type: "choice", options: [
     { value: "2", label: "2 days" }, { value: "3", label: "3 days" },
     { value: "4", label: "4 days" }, { value: "5", label: "5 days" }, { value: "6", label: "6 days" }] },
+  { key: "workout_style", title: "Preferred workout style?", type: "choice", options: [
+    { value: "gym", label: "Gym (weights)" },
+    { value: "calisthenics", label: "Calisthenics (bodyweight)" },
+    { value: "mixed", label: "Mix of both" },
+    { value: "home", label: "Home — minimal equipment" }] },
   { key: "diet_preference", title: "Diet preference", type: "choice", options: [
     { value: "omnivore", label: "Omnivore" }, { value: "vegetarian", label: "Vegetarian" },
     { value: "vegan", label: "Vegan" }, { value: "keto", label: "Keto" }] },
   { key: "wake_time", title: "When do you wake up?", type: "time", placeholder: "06:30" },
   { key: "sleep_time", title: "When do you sleep?", type: "time", placeholder: "22:30" },
+  { key: "work_schedule", title: "Work schedule?", type: "choice", options: [
+    { value: "mon_fri", label: "Mon – Fri" },
+    { value: "mon_sat", label: "Mon – Sat" },
+    { value: "flexible", label: "Flexible / remote" },
+    { value: "shift", label: "Shift work" },
+    { value: "none", label: "No fixed job" }] },
+  { key: "work_start", title: "Work start time", type: "time", placeholder: "09:00", skipIf: { work_schedule: "none" } },
+  { key: "work_end", title: "Work end time", type: "time", placeholder: "17:00", skipIf: { work_schedule: "none" } },
 ] as const;
 
 export default function Quiz() {
@@ -52,14 +65,29 @@ export default function Quiz() {
   const next = async () => {
     setErr("");
     if (value === undefined || value === "") return setErr("Please answer to continue");
-    if (step < STEPS.length - 1) {
-      setStep(step + 1);
+
+    // skip subsequent steps that are conditional and shouldn't apply
+    let nextStep = step + 1;
+    while (nextStep < STEPS.length) {
+      const cand: any = STEPS[nextStep];
+      if (cand.skipIf) {
+        const k = Object.keys(cand.skipIf)[0];
+        const v = (cand.skipIf as any)[k];
+        const a = k === current.key ? value : answers[k];
+        if (a === v) { nextStep++; continue; }
+      }
+      break;
+    }
+
+    if (nextStep < STEPS.length) {
+      setStep(nextStep);
       return;
     }
     setBusy(true);
     try {
       const payload = {
         ...answers,
+        [current.key]: value,
         age: Number(answers.age),
         height_cm: Number(answers.height_cm),
         weight_kg: Number(answers.weight_kg),

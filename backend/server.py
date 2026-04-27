@@ -99,6 +99,10 @@ class QuizSubmission(BaseModel):
     diet_preference: str  # omnivore, vegetarian, vegan, keto
     wake_time: str  # "06:30"
     sleep_time: str  # "22:30"
+    work_schedule: str = "mon_fri"  # mon_fri, mon_sat, flexible, shift, none
+    work_start: str = "09:00"  # ignored if work_schedule == "none"
+    work_end: str = "17:00"
+    workout_style: str = "gym"  # gym, calisthenics, mixed, home
 
 
 class ChatRequest(BaseModel):
@@ -180,6 +184,147 @@ def calc_water_glasses(weight_kg: float) -> int:
     return max(6, round((weight_kg * 35) / 250))
 
 
+# ----------------------- Exercise & Workout Library -----------------------
+def _vid(mid: str) -> str:
+    return f"https://assets.mixkit.co/videos/{mid}/{mid}-360.mp4"
+
+
+def _thumb(mid: str) -> str:
+    return f"https://assets.mixkit.co/videos/{mid}/{mid}-thumb-360-0.jpg"
+
+
+# (id, name, video, thumb, default sets x reps, instruction)
+EXERCISES: Dict[str, Dict[str, Any]] = {
+    # Bodyweight / calisthenics
+    "pushup": {"name": "Push-ups", "video": _vid("32308"), "thumb": _thumb("32308"),
+               "default": "3 x 10-15", "tip": "Keep core tight, elbows ~45°."},
+    "diamond_pushup": {"name": "Diamond push-ups", "video": _vid("24277"), "thumb": _thumb("24277"),
+                       "default": "3 x 8-12", "tip": "Hands together to hit triceps."},
+    "incline_pushup": {"name": "Incline push-ups", "video": _vid("11544"), "thumb": _thumb("11544"),
+                       "default": "3 x 12-15", "tip": "Easier — great for beginners."},
+    "pullup": {"name": "Pull-ups", "video": _vid("8770"), "thumb": _thumb("8770"),
+               "default": "3 x 5-8", "tip": "Full range, no kipping."},
+    "bw_squat": {"name": "Bodyweight squats", "video": _vid("21273"), "thumb": _thumb("21273"),
+                 "default": "3 x 15-20", "tip": "Knees track toes, hip crease below knee."},
+    "lunge": {"name": "Lunges", "video": _vid("49038"), "thumb": _thumb("49038"),
+              "default": "3 x 10/leg", "tip": "Step long, drive through front heel."},
+    "plank": {"name": "Plank hold", "video": _vid("15079"), "thumb": _thumb("15079"),
+              "default": "3 x 30-60s", "tip": "Brace core, glutes squeezed."},
+    "burpee": {"name": "Burpees", "video": _vid("11542"), "thumb": _thumb("11542"),
+               "default": "3 x 8-12", "tip": "Explosive — full body conditioner."},
+    "dip": {"name": "Tricep dips", "video": _vid("32320"), "thumb": _thumb("32320"),
+            "default": "3 x 10-12", "tip": "Use a bench or parallel bars."},
+    "mountain_climber": {"name": "Mountain climbers", "video": _vid("14065"), "thumb": _thumb("14065"),
+                         "default": "3 x 30s", "tip": "Hips stable, fast knees."},
+    "jumping_jack": {"name": "Jumping jacks", "video": _vid("4525"), "thumb": _thumb("4525"),
+                     "default": "3 x 45s", "tip": "Great warm-up cardio."},
+
+    # Gym-style — reuse closest matching free clips
+    "back_squat": {"name": "Back squat", "video": _vid("52117"), "thumb": _thumb("52117"),
+                   "default": "4 x 6-8", "tip": "Brace core, drive through midfoot."},
+    "deadlift": {"name": "Deadlift", "video": _vid("52099"), "thumb": _thumb("52099"),
+                 "default": "4 x 5", "tip": "Neutral spine, bar close to body."},
+    "bench_press": {"name": "Bench press", "video": _vid("32308"), "thumb": _thumb("32308"),
+                    "default": "4 x 6-8", "tip": "Retract scapulae, controlled descent."},
+    "overhead_press": {"name": "Overhead press", "video": _vid("44422"), "thumb": _thumb("44422"),
+                       "default": "4 x 6-8", "tip": "Glutes tight, press straight up."},
+    "row": {"name": "Barbell row", "video": _vid("44425"), "thumb": _thumb("44425"),
+            "default": "4 x 8", "tip": "Hinge to ~45°, pull to lower chest."},
+    "lat_pulldown": {"name": "Lat pulldown", "video": _vid("24277"), "thumb": _thumb("24277"),
+                     "default": "4 x 10", "tip": "Drive elbows down and back."},
+    "db_curl": {"name": "Dumbbell curl", "video": _vid("44423"), "thumb": _thumb("44423"),
+                "default": "3 x 10-12", "tip": "Elbows pinned, no swing."},
+    "tricep_pushdown": {"name": "Tricep pushdown", "video": _vid("44424"), "thumb": _thumb("44424"),
+                        "default": "3 x 10-12", "tip": "Lock elbows by ribs."},
+    "leg_press": {"name": "Leg press", "video": _vid("23913"), "thumb": _thumb("23913"),
+                  "default": "4 x 10", "tip": "Don't lock knees at top."},
+    "kettlebell_swing": {"name": "Kettlebell swing", "video": _vid("727"), "thumb": _thumb("727"),
+                         "default": "4 x 15", "tip": "Hip hinge — power from hips, not arms."},
+}
+
+
+def _ex(eid: str, sets_reps: Optional[str] = None) -> Dict[str, Any]:
+    base = EXERCISES[eid]
+    return {
+        "id": eid,
+        "name": base["name"],
+        "video": base["video"],
+        "thumb": base["thumb"],
+        "sets_reps": sets_reps or base["default"],
+        "tip": base["tip"],
+    }
+
+
+# Workout splits per style. Each split = list of days (rest days are also listed)
+# Split is selected by workout_days_per_week
+def build_workout_schedule(style: str, days_per_week: int) -> List[Dict[str, Any]]:
+    style = style if style in {"gym", "calisthenics", "mixed", "home"} else "gym"
+    d = max(2, min(6, days_per_week))
+
+    if style == "calisthenics":
+        days = [
+            {"day": "Day 1", "title": "Upper Body Pull & Push", "focus": "Strength",
+             "exercises": [_ex("pullup"), _ex("pushup"), _ex("diamond_pushup"), _ex("dip"), _ex("plank")]},
+            {"day": "Day 2", "title": "Lower Body & Core", "focus": "Power",
+             "exercises": [_ex("bw_squat"), _ex("lunge"), _ex("jumping_jack"), _ex("plank"), _ex("mountain_climber")]},
+            {"day": "Day 3", "title": "Full Body Conditioning", "focus": "Cardio",
+             "exercises": [_ex("burpee"), _ex("pushup"), _ex("bw_squat"), _ex("mountain_climber"), _ex("jumping_jack")]},
+            {"day": "Day 4", "title": "Push Focus", "focus": "Chest/Shoulders/Triceps",
+             "exercises": [_ex("pushup", "4 x 12-15"), _ex("incline_pushup"), _ex("dip"), _ex("plank")]},
+            {"day": "Day 5", "title": "Pull & Core", "focus": "Back/Biceps",
+             "exercises": [_ex("pullup", "4 x 5-8"), _ex("plank"), _ex("mountain_climber"), _ex("burpee")]},
+            {"day": "Day 6", "title": "Skills & Mobility", "focus": "Active recovery",
+             "exercises": [_ex("plank"), _ex("lunge"), _ex("bw_squat"), _ex("jumping_jack")]},
+        ]
+    elif style == "home":
+        days = [
+            {"day": "Day 1", "title": "Full Body Home", "focus": "Strength",
+             "exercises": [_ex("pushup"), _ex("bw_squat"), _ex("lunge"), _ex("plank")]},
+            {"day": "Day 2", "title": "Cardio Burn", "focus": "Conditioning",
+             "exercises": [_ex("jumping_jack"), _ex("burpee"), _ex("mountain_climber"), _ex("plank")]},
+            {"day": "Day 3", "title": "Lower Body", "focus": "Legs/Glutes",
+             "exercises": [_ex("bw_squat", "4 x 20"), _ex("lunge", "3 x 12/leg"), _ex("jumping_jack"), _ex("plank")]},
+            {"day": "Day 4", "title": "Upper Body", "focus": "Push/Pull",
+             "exercises": [_ex("pushup"), _ex("diamond_pushup"), _ex("dip"), _ex("plank")]},
+            {"day": "Day 5", "title": "HIIT Express", "focus": "Cardio",
+             "exercises": [_ex("burpee"), _ex("mountain_climber"), _ex("jumping_jack"), _ex("bw_squat")]},
+            {"day": "Day 6", "title": "Core & Mobility", "focus": "Recovery",
+             "exercises": [_ex("plank", "4 x 45s"), _ex("mountain_climber"), _ex("lunge")]},
+        ]
+    elif style == "mixed":
+        days = [
+            {"day": "Day 1", "title": "Push (Gym)", "focus": "Chest/Shoulders/Triceps",
+             "exercises": [_ex("bench_press"), _ex("overhead_press"), _ex("tricep_pushdown"), _ex("pushup")]},
+            {"day": "Day 2", "title": "Pull (Gym)", "focus": "Back/Biceps",
+             "exercises": [_ex("deadlift"), _ex("row"), _ex("lat_pulldown"), _ex("db_curl")]},
+            {"day": "Day 3", "title": "Calisthenics Conditioning", "focus": "Bodyweight",
+             "exercises": [_ex("pullup"), _ex("dip"), _ex("burpee"), _ex("plank")]},
+            {"day": "Day 4", "title": "Legs (Gym)", "focus": "Quads/Hamstrings/Glutes",
+             "exercises": [_ex("back_squat"), _ex("leg_press"), _ex("lunge"), _ex("kettlebell_swing")]},
+            {"day": "Day 5", "title": "Calisthenics Strength", "focus": "Bodyweight",
+             "exercises": [_ex("pushup", "4 x 15"), _ex("pullup", "4 x 6"), _ex("dip"), _ex("plank")]},
+            {"day": "Day 6", "title": "Conditioning & Core", "focus": "Cardio",
+             "exercises": [_ex("kettlebell_swing"), _ex("burpee"), _ex("mountain_climber"), _ex("plank")]},
+        ]
+    else:  # gym
+        days = [
+            {"day": "Day 1", "title": "Push Day", "focus": "Chest/Shoulders/Triceps",
+             "exercises": [_ex("bench_press"), _ex("overhead_press"), _ex("tricep_pushdown"), _ex("pushup")]},
+            {"day": "Day 2", "title": "Pull Day", "focus": "Back/Biceps",
+             "exercises": [_ex("deadlift"), _ex("row"), _ex("lat_pulldown"), _ex("db_curl")]},
+            {"day": "Day 3", "title": "Leg Day", "focus": "Quads/Hamstrings/Glutes",
+             "exercises": [_ex("back_squat"), _ex("leg_press"), _ex("lunge"), _ex("plank")]},
+            {"day": "Day 4", "title": "Upper Hypertrophy", "focus": "Volume upper",
+             "exercises": [_ex("bench_press", "4 x 10"), _ex("row", "4 x 10"), _ex("db_curl"), _ex("tricep_pushdown")]},
+            {"day": "Day 5", "title": "Lower Hypertrophy", "focus": "Volume lower",
+             "exercises": [_ex("back_squat", "4 x 10"), _ex("leg_press"), _ex("kettlebell_swing"), _ex("plank")]},
+            {"day": "Day 6", "title": "Conditioning", "focus": "Cardio + core",
+             "exercises": [_ex("kettlebell_swing"), _ex("burpee"), _ex("mountain_climber"), _ex("plank")]},
+        ]
+
+    return days[:d]
+
+
 async def generate_ai_plan(quiz: dict, user_name: str) -> str:
     chat = LlmChat(
         api_key=EMERGENT_LLM_KEY,
@@ -192,6 +337,13 @@ async def generate_ai_plan(quiz: dict, user_name: str) -> str:
         ),
     ).with_model("anthropic", "claude-sonnet-4-5-20250929")
 
+    work_line = (
+        "Work schedule: no fixed job — flexible all day"
+        if quiz.get("work_schedule") == "none"
+        else f"Work: {quiz.get('work_schedule', 'mon_fri').replace('_', '-')} "
+             f"from {quiz.get('work_start', '09:00')} to {quiz.get('work_end', '17:00')}"
+    )
+    style_line = f"Workout style: {quiz.get('workout_style', 'gym')}"
     prompt = (
         f"Create a personalized fitness plan for {user_name}.\n"
         f"Age: {quiz['age']} | Gender: {quiz['gender']}\n"
@@ -200,29 +352,69 @@ async def generate_ai_plan(quiz: dict, user_name: str) -> str:
         f"Activity level: {quiz['activity_level']}\n"
         f"Workout days/week: {quiz['workout_days_per_week']}\n"
         f"Diet: {quiz['diet_preference']}\n"
-        f"Wake: {quiz['wake_time']} | Sleep: {quiz['sleep_time']}"
+        f"Wake: {quiz['wake_time']} | Sleep: {quiz['sleep_time']}\n"
+        f"{work_line}\n"
+        f"{style_line}\n"
+        "IMPORTANT: schedule training and meals AROUND the user's work hours. "
+        "Recommend whether morning (before work) or evening (after work) workouts fit best, "
+        "and tailor the workout style (gym / calisthenics / home / mixed) accordingly. "
+        "A structured workout schedule with specific exercises is shown separately in the app — "
+        "in your reply focus on the OVERVIEW, NUTRITION STRATEGY, DAILY SCHEDULE, and PRO TIPS."
     )
     response = await chat.send_message(UserMessage(text=prompt))
     return response
 
 
+def _to_min(hhmm: str) -> int:
+    h, m = map(int, hhmm.split(":"))
+    return h * 60 + m
+
+
+def _to_hhmm(total: int) -> str:
+    total = total % (24 * 60)
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
 def build_reminders(quiz: dict) -> List[Dict[str, str]]:
     wake = quiz["wake_time"]
     sleep = quiz["sleep_time"]
+    has_job = quiz.get("work_schedule", "none") != "none"
+    work_start = _to_min(quiz.get("work_start", "09:00"))
+    work_end = _to_min(quiz.get("work_end", "17:00"))
+    wake_min = _to_min(wake)
 
-    def add_minutes(hhmm: str, minutes: int) -> str:
-        h, m = map(int, hhmm.split(":"))
-        total = (h * 60 + m + minutes) % (24 * 60)
-        return f"{total // 60:02d}:{total % 60:02d}"
+    # Workout: prefer before work if there are 90+ min between wake and work_start;
+    # otherwise schedule after work.
+    if has_job:
+        if work_start - wake_min >= 90:
+            workout_min = wake_min + 30
+            workout_label = "Morning workout"
+        else:
+            workout_min = work_end + 30
+            workout_label = "Post-work workout"
+        breakfast_min = wake_min + 25
+        # Lunch: within work hours, around midpoint or 13:00 if it falls inside work
+        midday = (work_start + work_end) // 2
+        lunch_min = midday if work_start <= 13 * 60 <= work_end else midday
+        # Hydration check: middle of work or mid-afternoon
+        hydration_min = (work_start + midday) // 2
+        # Dinner: 1h after work (if workout was post-work, after workout)
+        dinner_min = max(work_end + 60, workout_min + 75 if workout_label == "Post-work workout" else work_end + 60)
+    else:
+        workout_min = wake_min + 60
+        workout_label = "Workout session"
+        breakfast_min = wake_min + 30
+        lunch_min = 13 * 60
+        hydration_min = 16 * 60
+        dinner_min = 19 * 60 + 30
 
-    workout_time = add_minutes(wake, 60)
     return [
         {"id": "wake", "label": "Wake up & hydrate", "time": wake, "icon": "sun"},
-        {"id": "breakfast", "label": "Breakfast", "time": add_minutes(wake, 30), "icon": "coffee"},
-        {"id": "workout", "label": "Workout session", "time": workout_time, "icon": "dumbbell"},
-        {"id": "lunch", "label": "Lunch", "time": "13:00", "icon": "utensils"},
-        {"id": "snack", "label": "Hydration check", "time": "16:00", "icon": "droplet"},
-        {"id": "dinner", "label": "Dinner", "time": "19:30", "icon": "utensils"},
+        {"id": "breakfast", "label": "Breakfast", "time": _to_hhmm(breakfast_min), "icon": "coffee"},
+        {"id": "workout", "label": workout_label, "time": _to_hhmm(workout_min), "icon": "dumbbell"},
+        {"id": "lunch", "label": "Lunch", "time": _to_hhmm(lunch_min), "icon": "utensils"},
+        {"id": "snack", "label": "Hydration check", "time": _to_hhmm(hydration_min), "icon": "droplet"},
+        {"id": "dinner", "label": "Dinner", "time": _to_hhmm(dinner_min), "icon": "utensils"},
         {"id": "sleep", "label": "Wind down & sleep", "time": sleep, "icon": "moon"},
     ]
 
@@ -234,6 +426,9 @@ async def submit_quiz(quiz: QuizSubmission, user: dict = Depends(get_current_use
     calorie_target = calc_calorie_target(quiz_dict)
     water_glasses = calc_water_glasses(quiz_dict["weight_kg"])
     reminders = build_reminders(quiz_dict)
+    workout_schedule = build_workout_schedule(
+        quiz_dict["workout_style"], quiz_dict["workout_days_per_week"]
+    )
 
     plan_doc = {
         "user_id": user["id"],
@@ -242,6 +437,7 @@ async def submit_quiz(quiz: QuizSubmission, user: dict = Depends(get_current_use
         "calorie_target": calorie_target,
         "water_target_glasses": water_glasses,
         "reminders": reminders,
+        "workout_schedule": workout_schedule,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.plans.update_one({"user_id": user["id"]}, {"$set": plan_doc}, upsert=True)
