@@ -119,6 +119,18 @@ class CalorieLogRequest(BaseModel):
     calories: int
 
 
+class ReminderCreate(BaseModel):
+    label: str
+    time: str  # "HH:MM"
+    icon: str = "bell"
+
+
+class ReminderUpdate(BaseModel):
+    label: Optional[str] = None
+    time: Optional[str] = None
+    icon: Optional[str] = None
+
+
 # ----------------------- Auth Endpoints -----------------------
 @api_router.post("/auth/register", response_model=AuthResponse)
 async def register(req: RegisterRequest):
@@ -481,16 +493,90 @@ async def get_plan(user: dict = Depends(get_current_user)):
     plan = await db.plans.find_one({"user_id": user["id"]}, {"_id": 0})
     if not plan:
         raise HTTPException(status_code=404, detail="No plan yet — complete the quiz")
-    # Always rebuild structured workout & reminder schedule from saved quiz answers
-    # so existing users get the latest exercise library / scheduling tweaks.
     quiz = plan.get("quiz") or {}
     if quiz:
         plan["workout_schedule"] = build_workout_schedule(
             quiz.get("workout_style", "gym"),
             int(quiz.get("workout_days_per_week", 3)),
         )
-        plan["reminders"] = build_reminders(quiz)
+        if not plan.get("reminders_customized"):
+            plan["reminders"] = build_reminders(quiz)
+        else:
+            plan["reminders"] = sorted(plan.get("reminders", []), key=lambda r: _to_min(r["time"]))
     return plan
+
+
+# ---- Reminder CRUD ----
+async def _get_or_init_reminders(user_id: str) -> List[Dict[str, Any]]:
+    plan = await db.plans.find_one({"user_id": user_id}, {"_id": 0})
+    if not plan:
+        raise HTTPException(status_code=404, detail="Complete the quiz first")
+    if plan.get("reminders_customized") and plan.get("reminders"):
+        return plan["reminders"]
+    auto = build_reminders(plan.get("quiz", {}))
+    return auto
+
+
+@api_router.post("/reminders/add")
+async def add_reminder(req: ReminderCreate, user: dict = Depends(get_current_user)):
+    reminders = await _get_or_init_reminders(user["id"])
+    new_item = {"id": str(uuid.uuid4()), "label": req.label, "time": req.time, "icon": req.icon}
+    reminders = sorted(reminders + [new_item], key=lambda r: _to_min(r["time"]))
+    await db.plans.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"reminders": reminders, "reminders_customized": True}},
+    )
+    return {"reminders": reminders}
+
+
+@api_router.patch("/reminders/{reminder_id}")
+async def update_reminder(reminder_id: str, req: ReminderUpdate, user: dict = Depends(get_current_user)):
+    reminders = await _get_or_init_reminders(user["id"])
+    found = False
+    for r in reminders:
+        if r["id"] == reminder_id:
+            if req.label is not None:
+                r["label"] = req.label
+            if req.time is not None:
+                r["time"] = req.time
+            if req.icon is not None:
+                r["icon"] = req.icon
+            found = True
+            break
+    if not found:
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    reminders = sorted(reminders, key=lambda r: _to_min(r["time"]))
+    await db.plans.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"reminders": reminders, "reminders_customized": True}},
+    )
+    return {"reminders": reminders}
+
+
+@api_router.delete("/reminders/{reminder_id}")
+async def delete_reminder(reminder_id: str, user: dict = Depends(get_current_user)):
+    reminders = await _get_or_init_reminders(user["id"])
+    new_list = [r for r in reminders if r["id"] != reminder_id]
+    if len(new_list) == len(reminders):
+        raise HTTPException(status_code=404, detail="Reminder not found")
+    await db.plans.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"reminders": new_list, "reminders_customized": True}},
+    )
+    return {"reminders": new_list}
+
+
+@api_router.post("/reminders/reset")
+async def reset_reminders(user: dict = Depends(get_current_user)):
+    plan = await db.plans.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not plan:
+        raise HTTPException(status_code=404, detail="Complete the quiz first")
+    auto = build_reminders(plan.get("quiz", {}))
+    await db.plans.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"reminders": auto, "reminders_customized": False}},
+    )
+    return {"reminders": auto}
 
 
 # ----------------------- Daily tracker -----------------------
@@ -504,7 +590,12 @@ async def get_today(user: dict = Depends(get_current_user)):
     log = await db.daily_logs.find_one(
         {"user_id": user["id"], "date": today_key()}, {"_id": 0}
     ) or {"water_glasses": 0, "calories_consumed": 0, "meals": []}
-    reminders = build_reminders(plan["quiz"]) if plan and plan.get("quiz") else []
+    if plan and plan.get("reminders_customized") and plan.get("reminders"):
+        reminders = sorted(plan["reminders"], key=lambda r: _to_min(r["time"]))
+    elif plan and plan.get("quiz"):
+        reminders = build_reminders(plan["quiz"])
+    else:
+        reminders = []
     return {
         "date": today_key(),
         "water_glasses": log.get("water_glasses", 0),

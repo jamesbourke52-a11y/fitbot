@@ -4,21 +4,36 @@ import {
   ActivityIndicator, Alert, RefreshControl, TextInput, Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Droplet, Flame, Plus, Sun, Moon, Coffee, Utensils, Dumbbell, RotateCcw } from "lucide-react-native";
+import {
+  Droplet, Flame, Plus, Sun, Moon, Coffee, Utensils, Dumbbell, RotateCcw,
+  Bell, Pencil, Trash2, X,
+} from "lucide-react-native";
 import { useAuth, api } from "../../src/auth";
 import { colors } from "../../src/theme";
 
+type Reminder = { id: string; label: string; time: string; icon: string };
 type Today = {
   water_glasses: number; water_target: number;
   calories_consumed: number; calorie_target: number;
   meals: { name: string; calories: number }[];
-  reminders: { id: string; label: string; time: string; icon: string }[];
+  reminders: Reminder[];
 };
 
 const ICONS: Record<string, any> = {
   sun: Sun, moon: Moon, coffee: Coffee, utensils: Utensils,
-  dumbbell: Dumbbell, droplet: Droplet,
+  dumbbell: Dumbbell, droplet: Droplet, bell: Bell,
 };
+const ICON_OPTIONS: { key: string; label: string }[] = [
+  { key: "bell", label: "Reminder" },
+  { key: "sun", label: "Morning" },
+  { key: "moon", label: "Night" },
+  { key: "coffee", label: "Meal" },
+  { key: "utensils", label: "Food" },
+  { key: "dumbbell", label: "Workout" },
+  { key: "droplet", label: "Water" },
+];
+
+const validTime = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
 
 export default function Home() {
   const { token, user } = useAuth();
@@ -28,6 +43,11 @@ export default function Home() {
   const [mealModal, setMealModal] = useState(false);
   const [mealName, setMealName] = useState("");
   const [mealCal, setMealCal] = useState("");
+  const [reminderModal, setReminderModal] = useState(false);
+  const [editing, setEditing] = useState<Reminder | null>(null);
+  const [rLabel, setRLabel] = useState("");
+  const [rTime, setRTime] = useState("");
+  const [rIcon, setRIcon] = useState("bell");
 
   const load = useCallback(async () => {
     try {
@@ -36,8 +56,7 @@ export default function Home() {
     } catch (e: any) {
       console.log("load error", e.message);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      setLoading(false); setRefreshing(false);
     }
   }, [token]);
 
@@ -63,11 +82,69 @@ export default function Home() {
   };
 
   const reset = async () => {
-    Alert.alert("Reset today?", "Clear water + calorie progress.", [
+    Alert.alert("Reset today's tracker?", "Clear water + calorie progress (your reminders are kept).", [
       { text: "Cancel", style: "cancel" },
       { text: "Reset", style: "destructive", onPress: async () => {
         await api(token, "/api/tracker/reset", { method: "POST" });
         load();
+      }},
+    ]);
+  };
+
+  // ----- Reminder CRUD -----
+  const openAdd = () => {
+    setEditing(null);
+    setRLabel(""); setRTime(""); setRIcon("bell");
+    setReminderModal(true);
+  };
+
+  const openEdit = (r: Reminder) => {
+    setEditing(r);
+    setRLabel(r.label); setRTime(r.time); setRIcon(r.icon || "bell");
+    setReminderModal(true);
+  };
+
+  const saveReminder = async () => {
+    if (!rLabel.trim()) return Alert.alert("Missing", "Please enter a label");
+    if (!validTime(rTime)) return Alert.alert("Invalid time", "Use HH:MM (24h), e.g. 07:30");
+    try {
+      if (editing) {
+        await api(token, `/api/reminders/${editing.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ label: rLabel.trim(), time: rTime, icon: rIcon }),
+        });
+      } else {
+        await api(token, "/api/reminders/add", {
+          method: "POST",
+          body: JSON.stringify({ label: rLabel.trim(), time: rTime, icon: rIcon }),
+        });
+      }
+      setReminderModal(false);
+      load();
+    } catch (e: any) { Alert.alert("Error", e.message); }
+  };
+
+  const deleteReminder = (r: Reminder) => {
+    Alert.alert("Delete reminder?", `Remove "${r.label}" from your schedule.`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+        try {
+          await api(token, `/api/reminders/${r.id}`, { method: "DELETE" });
+          setReminderModal(false);
+          load();
+        } catch (e: any) { Alert.alert("Error", e.message); }
+      }},
+    ]);
+  };
+
+  const resetSchedule = () => {
+    Alert.alert("Reset schedule?", "Restore the default schedule generated from your quiz.", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Reset", onPress: async () => {
+        try {
+          await api(token, "/api/reminders/reset", { method: "POST" });
+          load();
+        } catch (e: any) { Alert.alert("Error", e.message); }
       }},
     ]);
   };
@@ -138,14 +215,31 @@ export default function Home() {
           </View>
         </View>
 
-        <Text style={s.sectionTitle}>Today's schedule</Text>
+        <View style={s.scheduleHead}>
+          <Text style={s.sectionTitle}>Today's schedule</Text>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <TouchableOpacity testID="schedule-reset" onPress={resetSchedule} style={s.iconBtn}>
+              <RotateCcw color={colors.textMuted} size={16} />
+            </TouchableOpacity>
+            <TouchableOpacity testID="schedule-add" onPress={openAdd} style={s.addBtn}>
+              <Plus color="#000" size={18} />
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={s.timeline}>
           {today.reminders.length === 0 ? (
-            <Text style={s.empty}>Complete the quiz to get your reminders.</Text>
+            <Text style={s.empty}>No reminders yet — tap + to add one.</Text>
           ) : today.reminders.map((r, i) => {
-            const Icon = ICONS[r.icon] || Sun;
+            const Icon = ICONS[r.icon] || Bell;
             return (
-              <View key={r.id} style={s.timeItem}>
+              <TouchableOpacity
+                key={r.id}
+                testID={`reminder-${r.id}`}
+                style={s.timeItem}
+                onPress={() => openEdit(r)}
+                activeOpacity={0.7}
+              >
                 <View style={s.timeDotWrap}>
                   <View style={s.timeDot} />
                   {i < today.reminders.length - 1 && <View style={s.timeLine} />}
@@ -156,8 +250,9 @@ export default function Home() {
                     <Text style={s.timeLabel}>{r.label}</Text>
                     <Text style={s.timeTime}>{r.time}</Text>
                   </View>
+                  <Pencil color={colors.textDim} size={14} />
                 </View>
-              </View>
+              </TouchableOpacity>
             );
           })}
         </View>
@@ -175,6 +270,7 @@ export default function Home() {
         )}
       </ScrollView>
 
+      {/* Meal modal */}
       <Modal visible={mealModal} transparent animationType="fade" onRequestClose={() => setMealModal(false)}>
         <View style={s.modalBg}>
           <View style={s.modal}>
@@ -189,6 +285,79 @@ export default function Home() {
               </TouchableOpacity>
               <TouchableOpacity testID="modal-meal-save" style={[s.modalBtn, { flex: 1, backgroundColor: colors.primary }]} onPress={addMeal}>
                 <Text style={{ color: "#000", fontWeight: "700" }}>Add</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Reminder add/edit modal */}
+      <Modal visible={reminderModal} transparent animationType="slide" onRequestClose={() => setReminderModal(false)}>
+        <View style={s.modalBg}>
+          <View style={s.modal}>
+            <View style={s.modalHead}>
+              <Text style={s.modalTitle}>{editing ? "Edit reminder" : "Add reminder"}</Text>
+              <TouchableOpacity onPress={() => setReminderModal(false)}>
+                <X color={colors.textMuted} size={20} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={s.lbl}>LABEL</Text>
+            <TextInput
+              testID="reminder-label"
+              style={s.modalInput}
+              placeholder="e.g. Stretch session"
+              placeholderTextColor={colors.textDim}
+              value={rLabel}
+              onChangeText={setRLabel}
+            />
+
+            <Text style={s.lbl}>TIME (24h, HH:MM)</Text>
+            <TextInput
+              testID="reminder-time"
+              style={s.modalInput}
+              placeholder="07:30"
+              placeholderTextColor={colors.textDim}
+              value={rTime}
+              onChangeText={setRTime}
+              maxLength={5}
+            />
+
+            <Text style={s.lbl}>ICON</Text>
+            <View style={s.iconGrid}>
+              {ICON_OPTIONS.map((opt) => {
+                const Icon = ICONS[opt.key];
+                const sel = rIcon === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    testID={`icon-${opt.key}`}
+                    style={[s.iconChip, sel && s.iconChipSel]}
+                    onPress={() => setRIcon(opt.key)}
+                  >
+                    <Icon color={sel ? "#000" : colors.primary} size={16} />
+                    <Text style={[s.iconChipText, sel && { color: "#000", fontWeight: "700" }]}>{opt.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
+              {editing && (
+                <TouchableOpacity
+                  testID="reminder-delete"
+                  style={[s.modalBtn, { backgroundColor: "#3a0e0e", borderColor: colors.error, borderWidth: 1 }]}
+                  onPress={() => deleteReminder(editing)}
+                >
+                  <Trash2 color={colors.error} size={18} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                testID="reminder-save"
+                style={[s.modalBtn, { flex: 1, backgroundColor: colors.primary }]}
+                onPress={saveReminder}
+              >
+                <Text style={{ color: "#000", fontWeight: "800" }}>{editing ? "Save changes" : "Add to schedule"}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -221,7 +390,10 @@ const s = StyleSheet.create({
   barFill: { height: 6, borderRadius: 3 },
   smallBtn: { flexDirection: "row", alignItems: "center", gap: 4, alignSelf: "flex-start", paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: colors.border, marginTop: 12 },
   smallBtnText: { fontSize: 12, fontWeight: "700" },
-  sectionTitle: { color: colors.text, fontSize: 18, fontWeight: "700", marginTop: 8, marginBottom: 12 },
+  scheduleHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 8, marginBottom: 12 },
+  sectionTitle: { color: colors.text, fontSize: 18, fontWeight: "700" },
+  iconBtn: { padding: 10, borderRadius: 999, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+  addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
   empty: { color: colors.textMuted, padding: 16 },
   timeline: { paddingLeft: 4 },
   timeItem: { flexDirection: "row", marginBottom: 8 },
@@ -235,9 +407,15 @@ const s = StyleSheet.create({
   mealRow: { flexDirection: "row", justifyContent: "space-between", padding: 14, backgroundColor: colors.surface, borderRadius: 12, marginBottom: 8, borderColor: colors.border, borderWidth: 1 },
   mealName: { color: colors.text, fontSize: 14 },
   mealCal: { color: colors.primary, fontWeight: "700" },
-  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 24 },
-  modal: { backgroundColor: colors.surfaceElevated, padding: 24, borderRadius: 20, borderWidth: 1, borderColor: colors.border, gap: 12 },
-  modalTitle: { color: colors.text, fontSize: 20, fontWeight: "700", marginBottom: 4 },
-  modalInput: { backgroundColor: "#0A0A0A", padding: 14, borderRadius: 12, color: colors.text, borderColor: colors.border, borderWidth: 1 },
-  modalBtn: { padding: 14, borderRadius: 999, alignItems: "center" },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
+  modal: { backgroundColor: colors.surfaceElevated, padding: 22, borderRadius: 22, borderWidth: 1, borderColor: colors.border },
+  modalHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  modalTitle: { color: colors.text, fontSize: 20, fontWeight: "800" },
+  lbl: { color: colors.textDim, fontSize: 11, letterSpacing: 2, fontWeight: "700", marginTop: 14, marginBottom: 6 },
+  modalInput: { backgroundColor: "#0A0A0A", padding: 14, borderRadius: 12, color: colors.text, borderColor: colors.border, borderWidth: 1, fontSize: 15 },
+  modalBtn: { padding: 14, borderRadius: 999, alignItems: "center", justifyContent: "center" },
+  iconGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  iconChip: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  iconChipSel: { backgroundColor: colors.primary, borderColor: colors.primary },
+  iconChipText: { color: colors.text, fontSize: 12 },
 });
