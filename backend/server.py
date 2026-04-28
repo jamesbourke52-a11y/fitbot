@@ -686,7 +686,33 @@ async def coach_history(user: dict = Depends(get_current_user)):
     return {"messages": msgs}
 
 
-# ----------------------- Products -----------------------
+# ----------------------- Products & Amazon Affiliate -----------------------
+AMAZON_DOMAINS = {
+    "US": "amazon.com",
+    "UK": "amazon.co.uk",
+    "IN": "amazon.in",
+    "CA": "amazon.ca",
+    "DE": "amazon.de",
+}
+
+
+def amazon_tag(region: str) -> str:
+    return os.environ.get(f"AMAZON_TAG_{region}", os.environ.get("AMAZON_TAG_US", "fitlux-20"))
+
+
+def build_amazon_url(region: str, asin: Optional[str], keywords: str) -> str:
+    from urllib.parse import quote
+    region = region if region in AMAZON_DOMAINS else "US"
+    domain = AMAZON_DOMAINS[region]
+    tag = amazon_tag(region)
+    if asin:
+        return f"https://www.{domain}/dp/{asin}?tag={tag}"
+    return f"https://www.{domain}/s?k={quote(keywords)}&tag={tag}"
+
+
+# Each product has search keywords and (optional) US ASIN. ASIN stays the same
+# across Amazon regions for the same listing in most cases; if a region has no
+# listing, we fall back to a keyword search.
 SEED_PRODUCTS = [
     {
         "id": "p-protein",
@@ -696,7 +722,8 @@ SEED_PRODUCTS = [
         "price": "$49.99",
         "category": "Protein",
         "image": "https://images.pexels.com/photos/29107585/pexels-photo-29107585.jpeg",
-        "buy_url": "https://www.amazon.com/s?k=whey+protein",
+        "asin": "B000QSNYGI",  # Optimum Nutrition Gold Standard Whey 5lb
+        "search": "Optimum Nutrition Gold Standard Whey Protein 5lb",
         "benefits": ["Lean muscle growth", "Fast recovery", "Low lactose"],
     },
     {
@@ -707,7 +734,8 @@ SEED_PRODUCTS = [
         "price": "$34.99",
         "category": "Vitality",
         "image": "https://images.pexels.com/photos/29107657/pexels-photo-29107657.jpeg",
-        "buy_url": "https://www.amazon.com/s?k=shilajit",
+        "asin": None,
+        "search": "Pure Himalayan Shilajit Resin authentic",
         "benefits": ["Energy & stamina", "Mineral rich", "Antioxidant"],
     },
     {
@@ -718,7 +746,8 @@ SEED_PRODUCTS = [
         "price": "$24.99",
         "category": "Performance",
         "image": "https://images.pexels.com/photos/14963236/pexels-photo-14963236.jpeg",
-        "buy_url": "https://www.amazon.com/s?k=creatine+monohydrate",
+        "asin": None,
+        "search": "Optimum Nutrition Creatine Monohydrate Powder Unflavored",
         "benefits": ["More strength", "Bigger pumps", "Faster recovery"],
     },
     {
@@ -729,7 +758,8 @@ SEED_PRODUCTS = [
         "price": "$19.99",
         "category": "Wellness",
         "image": "https://images.pexels.com/photos/29107657/pexels-photo-29107657.jpeg",
-        "buy_url": "https://www.amazon.com/s?k=multivitamin",
+        "asin": None,
+        "search": "Centrum Adult Multivitamin",
         "benefits": ["Daily nutrition", "Immunity", "Energy"],
     },
     {
@@ -740,7 +770,8 @@ SEED_PRODUCTS = [
         "price": "$22.99",
         "category": "Wellness",
         "image": "https://images.pexels.com/photos/29107585/pexels-photo-29107585.jpeg",
-        "buy_url": "https://www.amazon.com/s?k=omega+3+fish+oil",
+        "asin": None,
+        "search": "Nordic Naturals Ultimate Omega 1280mg",
         "benefits": ["Heart health", "Brain function", "Joint support"],
     },
     {
@@ -751,15 +782,27 @@ SEED_PRODUCTS = [
         "price": "$29.99",
         "category": "Performance",
         "image": "https://images.pexels.com/photos/14963236/pexels-photo-14963236.jpeg",
-        "buy_url": "https://www.amazon.com/s?k=bcaa",
+        "asin": None,
+        "search": "Scivation Xtend BCAA powder 30 servings",
         "benefits": ["Less soreness", "Faster recovery", "Endurance"],
     },
 ]
 
 
 @api_router.get("/products")
-async def list_products():
-    return {"products": SEED_PRODUCTS}
+async def list_products(region: str = "US"):
+    region = (region or "US").upper()
+    products = []
+    for p in SEED_PRODUCTS:
+        out = {k: v for k, v in p.items() if k != "asin" and k != "search"}
+        out["buy_url"] = build_amazon_url(region, p.get("asin"), p["search"])
+        products.append(out)
+    return {
+        "products": products,
+        "region": region if region in AMAZON_DOMAINS else "US",
+        "supported_regions": list(AMAZON_DOMAINS.keys()),
+        "disclosure": "As an Amazon Associate FitLux earns from qualifying purchases.",
+    }
 
 
 # ----------------------- Startup -----------------------
