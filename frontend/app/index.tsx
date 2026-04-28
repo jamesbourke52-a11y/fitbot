@@ -5,15 +5,16 @@ import { useAuth } from "../src/auth";
 import { colors } from "../src/theme";
 
 export default function Index() {
-  const { user, loading } = useAuth();
+  const { user, loading, subscription } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
     if (loading) return;
     if (!user) router.replace("/login");
+    else if (!subscription?.active) router.replace("/paywall");
     else if (!user.has_completed_quiz) router.replace("/quiz");
     else router.replace("/(tabs)");
-  }, [user, loading]);
+  }, [user, loading, subscription]);
 
   return (
     <View style={s.c}>

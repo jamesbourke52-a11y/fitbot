@@ -24,7 +24,7 @@ export default function Signup() {
     setBusy(true);
     try {
       await register(name.trim(), email.trim(), password);
-      router.replace("/");
+      router.replace("/paywall");
     } catch (e: any) {
       setErr(e.message || "Sign up failed");
     } finally {

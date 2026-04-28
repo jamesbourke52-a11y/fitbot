@@ -71,6 +71,15 @@ async def get_current_user(request: Request) -> dict:
     return user
 
 
+async def require_active_subscription(user: dict = Depends(get_current_user)) -> dict:
+    sub = await db.subscriptions.find_one({"user_id": user["id"]}, {"_id": 0})
+    if user.get("role") == "admin":
+        return user  # admins always pass
+    if sub and sub.get("status") in {"active", "trialing"}:
+        return user
+    raise HTTPException(status_code=402, detail="Subscription required")
+
+
 # ----------------------- Models -----------------------
 class RegisterRequest(BaseModel):
     email: EmailStr
@@ -462,7 +471,7 @@ def build_reminders(quiz: dict) -> List[Dict[str, str]]:
 
 
 @api_router.post("/quiz/submit")
-async def submit_quiz(quiz: QuizSubmission, user: dict = Depends(get_current_user)):
+async def submit_quiz(quiz: QuizSubmission, user: dict = Depends(require_active_subscription)):
     quiz_dict = quiz.model_dump()
     plan_text = await generate_ai_plan(quiz_dict, user["name"])
     calorie_target = calc_calorie_target(quiz_dict)
@@ -643,7 +652,7 @@ async def reset_today(user: dict = Depends(get_current_user)):
 
 # ----------------------- AI Chat (Coach) -----------------------
 @api_router.post("/coach/chat")
-async def coach_chat(req: ChatRequest, user: dict = Depends(get_current_user)):
+async def coach_chat(req: ChatRequest, user: dict = Depends(require_active_subscription)):
     session_id = req.session_id or f"coach-{user['id']}"
     plan = await db.plans.find_one({"user_id": user["id"]}, {"_id": 0})
     plan_context = ""
@@ -804,14 +813,272 @@ async def list_products(region: str = "US"):
         "disclosure": "As an Amazon Associate FitLux earns from qualifying purchases.",
     }
 
+# ----------------------- Stripe Subscriptions (access-window model) -----------------------
+from emergentintegrations.payments.stripe.checkout import (
+    StripeCheckout, CheckoutSessionRequest,
+)
 
-# ----------------------- Startup -----------------------
+STRIPE_API_KEY_ENV = os.environ["STRIPE_API_KEY"]
+
+SUBSCRIPTION_PACKAGES: Dict[str, Dict[str, Any]] = {
+    "monthly": {"amount": 9.99, "currency": "usd", "days": 30,
+                "label": "FitLux Premium — 1 month"},
+    "yearly":  {"amount": 95.99, "currency": "usd", "days": 365,
+                "label": "FitLux Premium — 12 months (20% off)"},
+}
+COMMISSION_EUR = float(os.environ.get("INFLUENCER_COMMISSION_EUR", "1.00"))
+
+
+class CheckoutRequest(BaseModel):
+    plan: str
+    origin: str
+    promo_code: Optional[str] = None
+
+
+class PromoCodeCreate(BaseModel):
+    code: str
+    influencer_name: str
+    influencer_email: EmailStr
+    discount_percent: int = 10
+    commission_eur: float = COMMISSION_EUR
+
+
+def _get_stripe_checkout(http_request: Request) -> StripeCheckout:
+    host = str(http_request.base_url).rstrip("/")
+    return StripeCheckout(api_key=STRIPE_API_KEY_ENV, webhook_url=f"{host}/api/webhook/stripe")
+
+
+async def _resolve_promo(code: str) -> Optional[dict]:
+    if not code:
+        return None
+    return await db.promo_codes.find_one(
+        {"code": code.upper(), "active": True}, {"_id": 0}
+    )
+
+
+@api_router.get("/subscription/plans")
+async def list_plans():
+    return {"plans": [
+        {"id": "monthly", "label": "Monthly", "amount_usd": 9.99,
+         "billing": "Pay once for 30 days · cancel anytime"},
+        {"id": "yearly", "label": "Yearly", "amount_usd": 95.99,
+         "billing": "Pay once for 365 days · 20% off vs monthly"},
+    ]}
+
+
+@api_router.get("/subscription/status")
+async def subscription_status_endpoint(user: dict = Depends(get_current_user)):
+    sub = await db.subscriptions.find_one({"user_id": user["id"]}, {"_id": 0})
+    if not sub:
+        return {"active": user.get("role") == "admin", "plan": None, "access_until": None}
+    until = sub.get("access_until")
+    active = bool(until and datetime.now(timezone.utc) < datetime.fromisoformat(until))
+    return {"active": active or user.get("role") == "admin",
+            "plan": sub.get("plan"), "access_until": until}
+
+
+@api_router.post("/subscription/promo/validate")
+async def validate_promo(req: dict, user: dict = Depends(get_current_user)):
+    code = (req.get("code") or "").upper().strip()
+    pc = await _resolve_promo(code)
+    if not pc:
+        return {"valid": False}
+    return {"valid": True, "code": pc["code"], "discount_percent": pc["discount_percent"]}
+
+
+@api_router.post("/subscription/checkout")
+async def create_subscription_checkout(req: CheckoutRequest, http_request: Request,
+                                       user: dict = Depends(get_current_user)):
+    if req.plan not in SUBSCRIPTION_PACKAGES:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    pkg = SUBSCRIPTION_PACKAGES[req.plan]
+    amount = float(pkg["amount"])
+    promo = await _resolve_promo(req.promo_code or "")
+    if promo:
+        amount = round(amount * (1 - promo["discount_percent"] / 100.0), 2)
+
+    origin = req.origin.rstrip("/")
+    success_url = f"{origin}/subscription-success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin}/paywall"
+
+    metadata = {
+        "user_id": user["id"], "user_email": user["email"],
+        "plan": req.plan, "days": str(pkg["days"]),
+        "promo_code": (promo["code"] if promo else ""),
+        "influencer_id": (promo["influencer_id"] if promo else ""),
+        "commission_eur": str(promo["commission_eur"]) if promo else "0",
+    }
+
+    checkout = _get_stripe_checkout(http_request)
+    session = await checkout.create_checkout_session(CheckoutSessionRequest(
+        amount=amount, currency=pkg["currency"],
+        success_url=success_url, cancel_url=cancel_url,
+        metadata=metadata,
+    ))
+
+    await db.payment_transactions.insert_one({
+        "session_id": session.session_id,
+        "user_id": user["id"], "plan": req.plan,
+        "amount": amount, "currency": pkg["currency"],
+        "metadata": metadata,
+        "status": "initiated", "payment_status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    })
+    return {"url": session.url, "session_id": session.session_id}
+
+
+async def _grant_access(user_id: str, plan: str, days: int, session_id: str):
+    existing = await db.subscriptions.find_one({"user_id": user_id}, {"_id": 0})
+    now = datetime.now(timezone.utc)
+    if existing and existing.get("last_session_id") == session_id:
+        return
+    base = now
+    if existing and existing.get("access_until"):
+        cur = datetime.fromisoformat(existing["access_until"])
+        if cur > now:
+            base = cur
+    new_until = base + timedelta(days=days)
+    await db.subscriptions.update_one(
+        {"user_id": user_id},
+        {"$set": {
+            "user_id": user_id, "plan": plan,
+            "access_until": new_until.isoformat(),
+            "last_session_id": session_id,
+            "updated_at": now.isoformat(),
+        }},
+        upsert=True,
+    )
+
+
+async def _credit_influencer(metadata: dict, user_id: str, session_id: str):
+    influencer_id = metadata.get("influencer_id")
+    if not influencer_id:
+        return
+    if await db.influencer_earnings.find_one({"session_id": session_id}):
+        return
+    amount = float(metadata.get("commission_eur", "0") or 0)
+    await db.influencer_earnings.insert_one({
+        "influencer_id": influencer_id, "user_id": user_id,
+        "promo_code": metadata.get("promo_code"),
+        "amount_eur": amount, "session_id": session_id,
+        "status": "pending",
+        "earned_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await db.influencers.update_one(
+        {"id": influencer_id},
+        {"$inc": {"pending_eur": amount, "total_signups": 1}},
+    )
+
+
+@api_router.get("/subscription/checkout/status/{session_id}")
+async def checkout_status_endpoint(session_id: str, http_request: Request,
+                                   user: dict = Depends(get_current_user)):
+    tx = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    if not tx or tx["user_id"] != user["id"]:
+        raise HTTPException(status_code=404, detail="Session not found")
+    checkout = _get_stripe_checkout(http_request)
+    status = await checkout.get_checkout_status(session_id)
+    payment_status = status.payment_status
+    new_status = "paid" if payment_status == "paid" else status.status
+    if tx["payment_status"] != "paid":
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {"status": new_status, "payment_status": payment_status}},
+        )
+        if payment_status == "paid":
+            md = tx.get("metadata") or {}
+            await _grant_access(user["id"], md.get("plan", "monthly"),
+                                int(md.get("days", "30")), session_id)
+            await _credit_influencer(md, user["id"], session_id)
+    return {"status": new_status, "payment_status": payment_status,
+            "subscription": await subscription_status_endpoint(user)}
+
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    body = await request.body()
+    sig = request.headers.get("Stripe-Signature", "")
+    checkout = _get_stripe_checkout(request)
+    try:
+        evt = await checkout.handle_webhook(body, sig)
+    except Exception as e:
+        logger.error(f"webhook decode failed: {e}")
+        return {"received": False}
+    if evt.payment_status == "paid" and evt.session_id:
+        tx = await db.payment_transactions.find_one({"session_id": evt.session_id}, {"_id": 0})
+        if tx and tx["payment_status"] != "paid":
+            await db.payment_transactions.update_one(
+                {"session_id": evt.session_id},
+                {"$set": {"status": "paid", "payment_status": "paid"}},
+            )
+            md = tx.get("metadata") or {}
+            await _grant_access(tx["user_id"], md.get("plan", "monthly"),
+                                int(md.get("days", "30")), evt.session_id)
+            await _credit_influencer(md, tx["user_id"], evt.session_id)
+    return {"received": True}
+
+
+# ----- Promo / Influencer admin endpoints -----
+async def require_admin(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
+@api_router.post("/admin/promo-codes")
+async def create_promo_code(req: PromoCodeCreate, user: dict = Depends(require_admin)):
+    influencer = await db.influencers.find_one({"email": req.influencer_email.lower()}, {"_id": 0})
+    if not influencer:
+        influencer = {
+            "id": str(uuid.uuid4()),
+            "name": req.influencer_name,
+            "email": req.influencer_email.lower(),
+            "pending_eur": 0.0, "paid_eur": 0.0, "total_signups": 0,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.influencers.insert_one(influencer)
+    doc = {
+        "code": req.code.upper(),
+        "influencer_id": influencer["id"],
+        "influencer_name": req.influencer_name,
+        "discount_percent": req.discount_percent,
+        "commission_eur": req.commission_eur,
+        "active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.promo_codes.update_one(
+        {"code": req.code.upper()}, {"$set": doc}, upsert=True
+    )
+    return {"promo_code": doc, "influencer": {k: v for k, v in influencer.items() if k != "_id"}}
+
+
+@api_router.get("/admin/promo-codes")
+async def list_promo_codes(user: dict = Depends(require_admin)):
+    return {"codes": await db.promo_codes.find({}, {"_id": 0}).to_list(200)}
+
+
+@api_router.get("/admin/influencers")
+async def list_influencers(user: dict = Depends(require_admin)):
+    return {"influencers": await db.influencers.find({}, {"_id": 0}).to_list(200)}
+
+
+@api_router.get("/admin/influencer-earnings")
+async def list_earnings(user: dict = Depends(require_admin)):
+    return {"earnings": await db.influencer_earnings.find({}, {"_id": 0}).sort("earned_at", -1).to_list(500)}
+
+
+
+
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
     await db.users.create_index("id", unique=True)
     await db.plans.create_index("user_id", unique=True)
     await db.daily_logs.create_index([("user_id", 1), ("date", 1)], unique=True)
+    await db.subscriptions.create_index("user_id", unique=True)
+    await db.payment_transactions.create_index("session_id", unique=True)
+    await db.promo_codes.create_index("code", unique=True)
+    await db.influencers.create_index("email", unique=True)
 
     admin_email = os.environ["ADMIN_EMAIL"].lower()
     admin_pwd = os.environ["ADMIN_PASSWORD"]
