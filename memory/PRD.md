@@ -29,6 +29,19 @@ tracker/calories, tracker/reset, coach/chat, coach/history, products
 
 ## Admin
 admin@fitlux.com / Admin@12345
+Additional admin emails auto-promoted from ADMIN_EMAILS env (currently jamesbourke52@gmail.com).
+In-app Admin Dashboard at /admin: metrics · promo code CRUD · influencer payouts · earnings feed.
+
+## Pricing (current)
+- Monthly subscription: $6.99 / 30 days
+- Yearly subscription: $67.10 / 365 days (≈ 20% off vs monthly)
+- Default influencer promo code: 20% discount, €1 commission per signup
+
+## Amazon Associates
+Shop screen includes prominent affiliate disclosure banner at the top (before any
+links) and long-form disclosure inside every product detail modal, meeting the
+Amazon Associates Program Operating Agreement requirements for identification
+as a participant.
 
 ## Smart enhancement
 The reminder timeline is recomputed every quiz submission from the user's wake time

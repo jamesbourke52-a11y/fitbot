@@ -409,12 +409,12 @@ function CreatePromoModal({ visible, token, onClose, onCreated }: {
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [discount, setDiscount] = useState("10");
+  const [discount, setDiscount] = useState("20");
   const [commission, setCommission] = useState("1.00");
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
-    setCode(""); setName(""); setEmail(""); setDiscount("10"); setCommission("1.00");
+    setCode(""); setName(""); setEmail(""); setDiscount("20"); setCommission("1.00");
   };
 
   const submit = async () => {

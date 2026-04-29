@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Linking, Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { ShoppingBag, X, ExternalLink, Check, Globe } from "lucide-react-native";
+import { ShoppingBag, X, ExternalLink, Check, Globe, Info } from "lucide-react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth, api } from "../../src/auth";
 import { colors } from "../../src/theme";
@@ -79,6 +79,16 @@ export default function Shop() {
         <Text style={s.title}>Premium supplements</Text>
         <Text style={s.subtitle}>Curated picks · ships from Amazon {region}</Text>
 
+        <View style={s.discBanner} testID="amazon-disclosure-banner">
+          <Info color={colors.primary} size={14} />
+          <Text style={s.discBannerText}>
+            <Text style={s.discBannerStrong}>Affiliate disclosure: </Text>
+            As an Amazon Associate, FitLux earns from qualifying purchases made
+            through the links below. Prices and availability come from Amazon
+            at checkout.
+          </Text>
+        </View>
+
         <View style={s.grid}>
           {products.map((p) => (
             <TouchableOpacity
@@ -132,9 +142,12 @@ export default function Shop() {
                     </View>
                   ))}
                   <View style={s.priceRow}>
-                    <Text style={s.modalPrice}>{selected.price}</Text>
+                    <View>
+                      <Text style={s.modalPrice}>{selected.price}</Text>
+                      <Text style={s.priceNote}>List price · check Amazon for live price</Text>
+                    </View>
                     <TouchableOpacity testID="buy-now-btn" style={s.buyBtn} onPress={() => buy(selected.buy_url)}>
-                      <Text style={s.buyBtnText}>Buy on Amazon</Text>
+                      <Text style={s.buyBtnText}>View on Amazon</Text>
                       <ExternalLink color="#000" size={16} />
                     </TouchableOpacity>
                   </View>
@@ -201,6 +214,9 @@ const s = StyleSheet.create({
   buyChip: { backgroundColor: colors.primaryGlow, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999 },
   buyChipText: { color: colors.primary, fontSize: 11, fontWeight: "700" },
   disclosure: { color: colors.textDim, fontSize: 11, marginTop: 16, lineHeight: 16, fontStyle: "italic", textAlign: "center" },
+  discBanner: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: colors.primaryGlow, borderColor: colors.primary, borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 16 },
+  discBannerText: { color: colors.text, fontSize: 12, lineHeight: 17, flex: 1 },
+  discBannerStrong: { color: colors.primary, fontWeight: "800" },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   modalCard: { backgroundColor: colors.surfaceElevated, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: "88%" },
   closeBtn: { position: "absolute", top: 12, right: 12, zIndex: 1, padding: 8, backgroundColor: "rgba(0,0,0,0.5)", borderRadius: 999 },
@@ -213,6 +229,7 @@ const s = StyleSheet.create({
   benText: { color: colors.text },
   priceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 24 },
   modalPrice: { color: colors.text, fontSize: 26, fontWeight: "900" },
+  priceNote: { color: colors.textDim, fontSize: 10, marginTop: 2, maxWidth: 150 },
   buyBtn: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: colors.primary, paddingHorizontal: 22, paddingVertical: 14, borderRadius: 999 },
   buyBtnText: { color: "#000", fontWeight: "800", fontSize: 15 },
   disclosureModal: { color: colors.textDim, fontSize: 11, marginTop: 18, lineHeight: 16, fontStyle: "italic" },

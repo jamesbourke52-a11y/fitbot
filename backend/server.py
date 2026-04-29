@@ -810,7 +810,14 @@ async def list_products(region: str = "US"):
         "products": products,
         "region": region if region in AMAZON_DOMAINS else "US",
         "supported_regions": list(AMAZON_DOMAINS.keys()),
-        "disclosure": "As an Amazon Associate FitLux earns from qualifying purchases.",
+        "disclosure": (
+            "FitLux is a participant in the Amazon Services LLC Associates "
+            "Program, an affiliate advertising program designed to provide a "
+            "means for sites to earn advertising fees by advertising and "
+            "linking to Amazon.com. As an Amazon Associate, FitLux earns from "
+            "qualifying purchases. Prices and availability are accurate as of "
+            "the date/time indicated on Amazon and are subject to change."
+        ),
     }
 
 # ----------------------- Stripe Subscriptions (access-window model) -----------------------
@@ -821,9 +828,9 @@ from emergentintegrations.payments.stripe.checkout import (
 STRIPE_API_KEY_ENV = os.environ["STRIPE_API_KEY"]
 
 SUBSCRIPTION_PACKAGES: Dict[str, Dict[str, Any]] = {
-    "monthly": {"amount": 9.99, "currency": "usd", "days": 30,
+    "monthly": {"amount": 6.99, "currency": "usd", "days": 30,
                 "label": "FitLux Premium — 1 month"},
-    "yearly":  {"amount": 95.99, "currency": "usd", "days": 365,
+    "yearly":  {"amount": 67.10, "currency": "usd", "days": 365,
                 "label": "FitLux Premium — 12 months (20% off)"},
 }
 COMMISSION_EUR = float(os.environ.get("INFLUENCER_COMMISSION_EUR", "1.00"))
@@ -839,7 +846,7 @@ class PromoCodeCreate(BaseModel):
     code: str
     influencer_name: str
     influencer_email: EmailStr
-    discount_percent: int = 10
+    discount_percent: int = 20
     commission_eur: float = COMMISSION_EUR
 
 
@@ -859,9 +866,9 @@ async def _resolve_promo(code: str) -> Optional[dict]:
 @api_router.get("/subscription/plans")
 async def list_plans():
     return {"plans": [
-        {"id": "monthly", "label": "Monthly", "amount_usd": 9.99,
+        {"id": "monthly", "label": "Monthly", "amount_usd": 6.99,
          "billing": "Pay once for 30 days · cancel anytime"},
-        {"id": "yearly", "label": "Yearly", "amount_usd": 95.99,
+        {"id": "yearly", "label": "Yearly", "amount_usd": 67.10,
          "billing": "Pay once for 365 days · 20% off vs monthly"},
     ]}
 

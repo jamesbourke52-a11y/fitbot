@@ -70,8 +70,8 @@ export default function Paywall() {
     router.replace("/login");
   };
 
-  const monthlyPrice = 9.99;
-  const yearlyPrice = 95.99;
+  const monthlyPrice = 6.99;
+  const yearlyPrice = 67.10;
   const discount = codeStatus?.valid ? codeStatus.discount || 0 : 0;
   const finalAmount = plan === "monthly"
     ? monthlyPrice * (1 - discount / 100)
@@ -107,8 +107,8 @@ export default function Paywall() {
               <Text style={s.bestBadgeText}>BEST VALUE · 20% OFF</Text>
             </View>
             <Text style={s.planLabel}>Yearly</Text>
-            <Text style={s.planPrice}>$95.99<Text style={s.planUnit}>/year</Text></Text>
-            <Text style={s.planSub}>≈ $7.99 / month · 365 days access</Text>
+            <Text style={s.planPrice}>$67.10<Text style={s.planUnit}>/year</Text></Text>
+            <Text style={s.planSub}>≈ $5.59 / month · 365 days access</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -118,7 +118,7 @@ export default function Paywall() {
             activeOpacity={0.8}
           >
             <Text style={s.planLabel}>Monthly</Text>
-            <Text style={s.planPrice}>$9.99<Text style={s.planUnit}>/month</Text></Text>
+            <Text style={s.planPrice}>$6.99<Text style={s.planUnit}>/month</Text></Text>
             <Text style={s.planSub}>30 days access · cancel anytime</Text>
           </TouchableOpacity>
         </View>
