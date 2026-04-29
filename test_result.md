@@ -101,3 +101,119 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Add an in-app Admin Dashboard to the FitLux fitness app so the owner can manage influencer promo
+  codes, view earnings / payouts, and see high-level metrics without using curl. Admin access is
+  limited to the seeded admin account (admin@fitlux.com) and jamesbourke52@gmail.com (auto-promoted
+  on server startup via ADMIN_EMAILS env var). Tests should cover all new admin endpoints.
+
+backend:
+  - task: "Admin dashboard endpoints (metrics, promo CRUD, payout)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+          agent: "main"
+          comment: |
+            Added new admin-only routes:
+              - GET /api/admin/metrics — aggregated stats (users, subs, revenue, promo totals,
+                influencer pending/paid sums)
+              - PATCH /api/admin/promo-codes/{code} — update active flag / discount / commission / name
+              - DELETE /api/admin/promo-codes/{code} — remove a code
+              - POST /api/admin/influencers/{id}/payout — move pending_eur → paid_eur, flip earnings
+                to status=paid, set last_payout_at.
+            Existing admin routes (POST/GET promo-codes, GET influencers, GET influencer-earnings)
+            were preserved.
+            Added ADMIN_EMAILS env var (comma-separated) and startup logic to promote matching
+            existing users to role=admin. Seeded admin (admin@fitlux.com / Admin@12345) is untouched.
+            Admin-only guard via require_admin(). Non-admin → 403.
+        -working: true
+          agent: "testing"
+          comment: |
+            All 16 admin/promo backend test cases PASS using public REACT_APP_BACKEND_URL
+            (https://fitbot-whatsapp.preview.emergentagent.com/api). Verified flow end-to-end:
+              1) Admin login (admin@fitlux.com / Admin@12345) → token, role=admin ✓
+              2) GET /api/admin/metrics → 200 with all 9 expected keys
+                 (total_users=6, active_subscriptions=1, total_revenue_usd=9.99 float,
+                 paid_transactions, promo_codes_total/active, influencer_signups,
+                 influencer_pending_eur, influencer_paid_eur) ✓
+              3) POST /api/admin/promo-codes TEST10 → 200, returns promo_code + influencer
+                 with id (auto-created) ✓
+              4) GET /api/admin/promo-codes lists TEST10 ✓
+              5) PATCH active=false → returned promo_code.active=False ✓
+              6) PATCH active=true + discount_percent=15 → both updated ✓
+              7) POST /api/subscription/promo/validate as authenticated non-admin user
+                 → {valid: true, code: TEST10, discount_percent: 15} ✓
+              8) GET /api/admin/influencers contains created influencer id ✓
+              9) POST /api/admin/influencers/{id}/payout (no earnings) → 200
+                 paid_amount_eur=0, no error ✓
+             10) GET /api/admin/influencer-earnings → 200 with earnings array ✓
+             11) DELETE /api/admin/promo-codes/TEST10 → {deleted: true} ✓
+             12) GET /api/admin/promo-codes after delete → TEST10 absent ✓
+             13) Authorization checks all correct:
+                 - Non-admin user → GET /api/admin/metrics → 403 ✓
+                 - No Authorization header → 401 ✓
+                 - PATCH nonexistent code → 404 ✓
+                 - Payout nonexistent influencer-id → 404 ✓
+            See /app/backend_test.py for full repeatable suite.
+
+frontend:
+  - task: "Admin dashboard screen (/admin) with tabs"
+    implemented: true
+    working: "NA"
+    file: "/app/frontend/app/admin.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+          agent: "main"
+          comment: |
+            New screen with 4 tabs: Overview (stat cards), Promo Codes (create modal, toggle
+            active, delete), Influencers (payout action), Earnings (chronological list).
+            Gated: non-admin users are auto-redirected to /(tabs). Profile tab now shows an
+            "Admin dashboard" link only when user.role === "admin". index.tsx now routes admins
+            directly to /admin on app load.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.1"
+  test_sequence: 1
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Admin dashboard endpoints (metrics, promo CRUD, payout)"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    -agent: "main"
+      message: |
+        Please verify the new admin endpoints using the admin credentials from
+        /app/memory/test_credentials.md (admin@fitlux.com / Admin@12345). Flow to cover:
+          1) Login as admin → GET /api/admin/metrics returns all numeric fields.
+          2) POST /api/admin/promo-codes to create a code (e.g. TEST10).
+          3) GET /api/admin/promo-codes lists it.
+          4) PATCH /api/admin/promo-codes/TEST10 with {"active": false} deactivates it.
+          5) DELETE /api/admin/promo-codes/TEST10 removes it.
+          6) GET /api/admin/influencers returns the auto-created influencer for step 2.
+          7) POST /api/admin/influencers/{id}/payout works even when pending=0 (no error).
+          8) Non-admin user (register a fresh one) is rejected with 403 on all admin routes.
+        Do NOT test Stripe live checkouts (Stripe key is test mode via emergentintegrations).
+    -agent: "testing"
+      message: |
+        Backend admin dashboard endpoints fully verified — 16/16 tests PASS via public
+        REACT_APP_BACKEND_URL. All requested flow steps (1–12) and all four
+        authorization checks (non-admin 403, no-auth 401, missing-code 404, missing-influencer 404)
+        succeed. Promo lifecycle (create → list → patch active=false → patch active=true+disc=15
+        → validate by user → delete → list) works end-to-end. Influencer auto-creation, payout
+        with zero pending balance, and earnings listing all return 200. /admin/metrics returns
+        all 9 expected keys with correct types (total_revenue_usd is a float). No backend issues
+        observed in supervisor logs. Test suite saved at /app/backend_test.py for re-runs.

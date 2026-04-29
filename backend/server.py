@@ -1067,6 +1067,99 @@ async def list_earnings(user: dict = Depends(require_admin)):
     return {"earnings": await db.influencer_earnings.find({}, {"_id": 0}).sort("earned_at", -1).to_list(500)}
 
 
+class PromoCodeUpdate(BaseModel):
+    active: Optional[bool] = None
+    discount_percent: Optional[int] = None
+    commission_eur: Optional[float] = None
+    influencer_name: Optional[str] = None
+
+
+@api_router.patch("/admin/promo-codes/{code}")
+async def update_promo_code(code: str, req: PromoCodeUpdate,
+                            user: dict = Depends(require_admin)):
+    updates = {k: v for k, v in req.dict().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    res = await db.promo_codes.update_one(
+        {"code": code.upper()}, {"$set": updates}
+    )
+    if res.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Code not found")
+    doc = await db.promo_codes.find_one({"code": code.upper()}, {"_id": 0})
+    return {"promo_code": doc}
+
+
+@api_router.delete("/admin/promo-codes/{code}")
+async def delete_promo_code(code: str, user: dict = Depends(require_admin)):
+    res = await db.promo_codes.delete_one({"code": code.upper()})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Code not found")
+    return {"deleted": True}
+
+
+@api_router.post("/admin/influencers/{influencer_id}/payout")
+async def mark_influencer_paid(influencer_id: str,
+                                user: dict = Depends(require_admin)):
+    """Mark all pending earnings for an influencer as paid, move balance to paid_eur."""
+    inf = await db.influencers.find_one({"id": influencer_id}, {"_id": 0})
+    if not inf:
+        raise HTTPException(status_code=404, detail="Influencer not found")
+    pending = float(inf.get("pending_eur", 0) or 0)
+    if pending <= 0:
+        return {"influencer": inf, "paid_amount_eur": 0}
+    now = datetime.now(timezone.utc).isoformat()
+    await db.influencer_earnings.update_many(
+        {"influencer_id": influencer_id, "status": "pending"},
+        {"$set": {"status": "paid", "paid_at": now}},
+    )
+    await db.influencers.update_one(
+        {"id": influencer_id},
+        {"$set": {"pending_eur": 0.0, "last_payout_at": now},
+         "$inc": {"paid_eur": pending}},
+    )
+    updated = await db.influencers.find_one({"id": influencer_id}, {"_id": 0})
+    return {"influencer": updated, "paid_amount_eur": pending}
+
+
+@api_router.get("/admin/metrics")
+async def admin_metrics(user: dict = Depends(require_admin)):
+    total_users = await db.users.count_documents({"role": {"$ne": "admin"}})
+    now_iso = datetime.now(timezone.utc).isoformat()
+    active_subs = await db.subscriptions.count_documents({"access_until": {"$gt": now_iso}})
+
+    paid_cursor = db.payment_transactions.find({"payment_status": "paid"}, {"_id": 0, "amount": 1, "currency": 1})
+    total_paid_usd = 0.0
+    paid_count = 0
+    async for tx in paid_cursor:
+        paid_count += 1
+        if (tx.get("currency") or "usd").lower() == "usd":
+            total_paid_usd += float(tx.get("amount") or 0)
+
+    promo_total = await db.promo_codes.count_documents({})
+    promo_active = await db.promo_codes.count_documents({"active": True})
+
+    # Sum influencer pending/paid
+    pending_sum = 0.0
+    paid_sum = 0.0
+    signups_sum = 0
+    async for inf in db.influencers.find({}, {"_id": 0}):
+        pending_sum += float(inf.get("pending_eur", 0) or 0)
+        paid_sum += float(inf.get("paid_eur", 0) or 0)
+        signups_sum += int(inf.get("total_signups", 0) or 0)
+
+    return {
+        "total_users": total_users,
+        "active_subscriptions": active_subs,
+        "total_revenue_usd": round(total_paid_usd, 2),
+        "paid_transactions": paid_count,
+        "promo_codes_total": promo_total,
+        "promo_codes_active": promo_active,
+        "influencer_signups": signups_sum,
+        "influencer_pending_eur": round(pending_sum, 2),
+        "influencer_paid_eur": round(paid_sum, 2),
+    }
+
+
 
 
 @app.on_event("startup")
@@ -1097,6 +1190,13 @@ async def startup():
     elif not verify_password(admin_pwd, existing["password_hash"]):
         await db.users.update_one({"email": admin_email},
                                    {"$set": {"password_hash": hash_password(admin_pwd)}})
+
+    # Promote additional admin emails (comma-separated) to role=admin
+    extra = os.environ.get("ADMIN_EMAILS", "")
+    for em in [e.strip().lower() for e in extra.split(",") if e.strip()]:
+        res = await db.users.update_one({"email": em}, {"$set": {"role": "admin"}})
+        if res.matched_count:
+            logger.info(f"Promoted {em} to admin")
 
 
 @app.on_event("shutdown")

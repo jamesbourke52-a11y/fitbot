@@ -17,6 +17,7 @@ export default function RootLayout() {
             <Stack.Screen name="paywall" />
             <Stack.Screen name="subscription-success" />
             <Stack.Screen name="quiz" />
+            <Stack.Screen name="admin" />
             <Stack.Screen name="(tabs)" />
           </Stack>
         </AuthProvider>

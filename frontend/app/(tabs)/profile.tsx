@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LogOut, RefreshCw, MessageCircle } from "lucide-react-native";
+import { LogOut, RefreshCw, MessageCircle, ShieldCheck } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../src/auth";
 import { colors } from "../../src/theme";
@@ -8,6 +8,7 @@ import { colors } from "../../src/theme";
 export default function Profile() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const isAdmin = user?.role === "admin";
 
   const onLogout = () => {
     Alert.alert("Sign out", "Are you sure?", [
@@ -29,9 +30,21 @@ export default function Profile() {
           <View>
             <Text style={s.name} testID="profile-name">{user?.name}</Text>
             <Text style={s.email} testID="profile-email">{user?.email}</Text>
-            <View style={s.badge}><Text style={s.badgeText}>FITLUX MEMBER</Text></View>
+            <View style={[s.badge, isAdmin && { backgroundColor: "rgba(16,185,129,0.15)", borderColor: colors.success, borderWidth: 1 }]}>
+              <Text style={[s.badgeText, isAdmin && { color: colors.success }]}>{isAdmin ? "ADMIN" : "FITLUX MEMBER"}</Text>
+            </View>
           </View>
         </View>
+
+        {isAdmin && (
+          <View style={s.section}>
+            <Text style={s.sectionTitle}>ADMIN</Text>
+            <TouchableOpacity testID="profile-admin" style={s.row} onPress={() => router.push("/admin")}>
+              <ShieldCheck color={colors.primary} size={18} />
+              <Text style={s.rowText}>Admin dashboard</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={s.section}>
           <Text style={s.sectionTitle}>ACTIONS</Text>

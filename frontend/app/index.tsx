@@ -11,6 +11,7 @@ export default function Index() {
   useEffect(() => {
     if (loading) return;
     if (!user) router.replace("/login");
+    else if (user.role === "admin") router.replace("/admin");
     else if (!subscription?.active) router.replace("/paywall");
     else if (!user.has_completed_quiz) router.replace("/quiz");
     else router.replace("/(tabs)");
