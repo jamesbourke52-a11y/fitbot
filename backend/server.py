@@ -1205,6 +1205,59 @@ async def startup():
         if res.matched_count:
             logger.info(f"Promoted {em} to admin")
 
+    # Seed Amazon Associates reviewer account (full access for program review)
+    rev_email = os.environ.get("REVIEWER_EMAIL", "").strip().lower()
+    rev_pwd = os.environ.get("REVIEWER_PASSWORD", "").strip()
+    if rev_email and rev_pwd:
+        rev_user = await db.users.find_one({"email": rev_email})
+        if not rev_user:
+            rev_user = {
+                "id": str(uuid.uuid4()),
+                "email": rev_email,
+                "name": "Amazon Reviewer",
+                "password_hash": hash_password(rev_pwd),
+                "role": "reviewer",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "has_completed_quiz": True,
+            }
+            await db.users.insert_one(rev_user)
+            logger.info("Reviewer account seeded")
+        else:
+            await db.users.update_one(
+                {"email": rev_email},
+                {"$set": {"password_hash": hash_password(rev_pwd),
+                          "role": "reviewer", "has_completed_quiz": True}},
+            )
+        # Grant (or extend) a 10-year subscription window
+        until = datetime.now(timezone.utc) + timedelta(days=3650)
+        await db.subscriptions.update_one(
+            {"user_id": rev_user["id"]},
+            {"$set": {
+                "user_id": rev_user["id"], "plan": "yearly",
+                "access_until": until.isoformat(),
+                "last_session_id": "reviewer-grant",
+                "status": "active",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+        # Seed a lightweight plan so the tabs render content
+        await db.plans.update_one(
+            {"user_id": rev_user["id"]},
+            {"$setOnInsert": {
+                "user_id": rev_user["id"],
+                "plan_data": {
+                    "summary": "Sample plan for Amazon Associates program review.",
+                    "split": ["Push", "Pull", "Legs", "Rest", "Push", "Pull", "Rest"],
+                    "calories": 2400, "protein_g": 160, "water_l": 3.0,
+                },
+                "quiz_data": {"goal": "general_fitness", "days_per_week": 4},
+                "schedule": [],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
