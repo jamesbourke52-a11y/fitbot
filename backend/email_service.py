@@ -265,6 +265,8 @@ async def _process_user_drips(db, user: dict) -> None:
         subject, html = factory(user.get("name", ""), user["id"])
         await send(db, user_id=user["id"], email=user["email"],
                    kind=kind, subject=subject, html=html)
+        # Resend sandbox + free tier rate-limit: 2 req/s safely.
+        await asyncio.sleep(0.5)
 
 
 async def drip_sweep(db) -> dict:

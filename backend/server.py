@@ -1135,6 +1135,19 @@ async def trigger_drip_sweep_now(user: dict = Depends(require_admin)):
     return res
 
 
+@api_router.post("/admin/email-test")
+async def admin_email_test(payload: dict, user: dict = Depends(require_admin)):
+    """Send a sample welcome email to any address (for sandbox testing)."""
+    from email_service import tpl_welcome, send
+    target = payload.get("email") or user["email"]
+    fake_user = {"id": user["id"], "email": target, "name": payload.get("name", "Test")}
+    subject, html = tpl_welcome(fake_user["name"], fake_user["id"])
+    ok = await send(db, user_id=fake_user["id"], email=target,
+                    kind=f"test-{datetime.now(timezone.utc).timestamp()}",
+                    subject=f"[TEST] {subject}", html=html)
+    return {"sent": ok, "to": target}
+
+
 # Public unsubscribe endpoint — token validated, no auth needed.
 @api_router.get("/email/unsubscribe")
 async def email_unsubscribe(u: str, t: str):
