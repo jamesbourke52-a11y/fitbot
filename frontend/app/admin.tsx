@@ -57,7 +57,7 @@ type Earning = {
   paid_at?: string;
 };
 
-type Tab = "overview" | "codes" | "influencers" | "earnings";
+type Tab = "overview" | "codes" | "influencers" | "earnings" | "emails";
 
 export default function AdminScreen() {
   const { user, token, loading: authLoading } = useAuth();
@@ -70,6 +70,8 @@ export default function AdminScreen() {
   const [codes, setCodes] = useState<PromoCode[]>([]);
   const [influencers, setInfluencers] = useState<Influencer[]>([]);
   const [earnings, setEarnings] = useState<Earning[]>([]);
+  const [emails, setEmails] = useState<any[]>([]);
+  const [emailTotals, setEmailTotals] = useState<Record<string, number>>({});
   const [createOpen, setCreateOpen] = useState(false);
 
   // Gate: only admins can enter.
@@ -82,16 +84,19 @@ export default function AdminScreen() {
   const loadAll = useCallback(async () => {
     if (!token) return;
     try {
-      const [m, c, i, e] = await Promise.all([
+      const [m, c, i, e, em] = await Promise.all([
         api(token, "/api/admin/metrics"),
         api(token, "/api/admin/promo-codes"),
         api(token, "/api/admin/influencers"),
         api(token, "/api/admin/influencer-earnings"),
+        api(token, "/api/admin/email-log"),
       ]);
       setMetrics(m);
       setCodes(c.codes || []);
       setInfluencers(i.influencers || []);
       setEarnings(e.earnings || []);
+      setEmails(em.log || []);
+      setEmailTotals(em.totals_by_kind || {});
     } catch (err: any) {
       Alert.alert("Load failed", err?.message || "Could not load admin data");
     } finally {
@@ -187,7 +192,7 @@ export default function AdminScreen() {
       </View>
 
       <View style={s.tabs}>
-        {(["overview", "codes", "influencers", "earnings"] as Tab[]).map((t) => (
+        {(["overview", "codes", "influencers", "earnings", "emails"] as Tab[]).map((t) => (
           <TouchableOpacity key={t} onPress={() => setTab(t)}
             style={[s.tabBtn, tab === t && s.tabBtnActive]}>
             <Text style={[s.tabText, tab === t && s.tabTextActive]}>{tabLabel(t)}</Text>
@@ -212,6 +217,7 @@ export default function AdminScreen() {
           <InfluencersTab influencers={influencers} onMarkPaid={markPaid} />
         )}
         {tab === "earnings" && <EarningsTab earnings={earnings} />}
+        {tab === "emails" && <EmailsTab emails={emails} totals={emailTotals} token={token} onRun={loadAll} />}
       </ScrollView>
 
       <CreatePromoModal
@@ -228,7 +234,8 @@ function tabLabel(t: Tab) {
   return t === "overview" ? "Overview"
     : t === "codes" ? "Promo Codes"
     : t === "influencers" ? "Influencers"
-    : "Earnings";
+    : t === "earnings" ? "Earnings"
+    : "Emails";
 }
 
 /* ---------- Overview ---------- */
@@ -402,6 +409,78 @@ function EarningsTab({ earnings }: { earnings: Earning[] }) {
   );
 }
 
+/* ---------- Emails ---------- */
+function EmailsTab({ emails, totals, token, onRun }: {
+  emails: any[]; totals: Record<string, number>; token: string | null; onRun: () => void;
+}) {
+  const [running, setRunning] = useState(false);
+  const triggerSweep = async () => {
+    setRunning(true);
+    try {
+      const res = await api(token, "/api/admin/email-drip-now", { method: "POST" });
+      if (res?.skipped) {
+        Alert.alert("Email sending disabled", "RESEND_API_KEY is not set on the backend. Add it in /app/backend/.env to start sending.");
+      } else {
+        Alert.alert("Drip sweep complete", `Processed ${res?.processed || 0} users.`);
+      }
+      onRun();
+    } catch (e: any) {
+      Alert.alert("Sweep failed", e?.message || "Try again");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const totalEntries = Object.entries(totals);
+
+  return (
+    <View>
+      <View style={s.card}>
+        <Text style={s.codeLabel}>Drip sequence</Text>
+        <Text style={s.influencer}>Day 1 · Day 3 · Day 7 · Day 14 + Welcome & Payment receipts</Text>
+        <View style={{ marginTop: 14, flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {totalEntries.length === 0 ? (
+            <Text style={s.emptyText}>No emails sent yet.</Text>
+          ) : (
+            totalEntries.map(([k, v]) => (
+              <View key={k} style={s.kindPill}>
+                <Text style={s.kindPillText}>{k}</Text>
+                <Text style={s.kindPillCount}>{v}</Text>
+              </View>
+            ))
+          )}
+        </View>
+        <TouchableOpacity style={[s.payoutBtn, { marginTop: 16 }]} onPress={triggerSweep} disabled={running}>
+          {running ? <ActivityIndicator color="#0A0A0A" />
+            : <Text style={s.payoutBtnText}>Run drip sweep now</Text>}
+        </TouchableOpacity>
+      </View>
+
+      <Text style={[s.sectionLabel, { marginTop: 16 }]}>RECENT (last 500)</Text>
+      {emails.length === 0 ? (
+        <View style={s.empty}><Text style={s.emptyText}>No email events yet.</Text></View>
+      ) : emails.map((e: any, idx: number) => (
+        <View key={idx} style={s.earningRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.earningCode}>{e.kind}</Text>
+            <Text style={s.earningDate}>{new Date(e.sent_at).toLocaleString()}</Text>
+            {e.error && <Text style={[s.earningDate, { color: colors.error }]} numberOfLines={1}>{e.error}</Text>}
+          </View>
+          <View style={[s.statusPill,
+            e.status === "sent" ? s.statusOn :
+            e.status === "skipped_unsubscribed" ? s.statusOff : s.statusOwed]}>
+            <Text style={[s.statusText,
+              e.status === "sent" ? s.statusOnText :
+              e.status === "skipped_unsubscribed" ? s.statusOffText : s.statusOwedText]}>
+              {e.status?.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /* ---------- Create Promo Modal ---------- */
 function CreatePromoModal({ visible, token, onClose, onCreated }: {
   visible: boolean; token: string | null; onClose: () => void; onCreated: () => void;
@@ -546,6 +625,11 @@ const s = StyleSheet.create({
   earningDate: { color: colors.textDim, fontSize: 11, marginTop: 2 },
   earningAmount: { color: colors.primary, fontSize: 16, fontWeight: "900" },
   earningStatus: { fontSize: 10, fontWeight: "800", letterSpacing: 1, marginTop: 2 },
+
+  sectionLabel: { color: colors.textDim, fontSize: 11, fontWeight: "700", letterSpacing: 1.5, marginBottom: 8 },
+  kindPill: { flexDirection: "row", gap: 6, alignItems: "center", backgroundColor: colors.surfaceElevated, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderColor: colors.border, borderWidth: 1 },
+  kindPillText: { color: colors.text, fontSize: 11, fontWeight: "700" },
+  kindPillCount: { color: colors.primary, fontSize: 11, fontWeight: "900" },
 
   modalWrap: { flex: 1, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.6)" },
   modalCard: { backgroundColor: colors.surface, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderColor: colors.border, borderWidth: 1 },

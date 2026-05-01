@@ -109,6 +109,55 @@ user_problem_statement: |
   on server startup via ADMIN_EMAILS env var). Tests should cover all new admin endpoints.
 
 backend:
+  - task: "Email drip + transactional infrastructure (Resend)"
+    implemented: true
+    working: true
+    file: "/app/backend/email_service.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+          agent: "main"
+          comment: |
+            New module /app/backend/email_service.py with:
+              - Resend SDK send helper (async via asyncio.to_thread)
+              - 4 drip templates (Day1/3/7/14) + Welcome + Payment receipt
+              - drip_loop() background task spawned at app startup (~30 min interval)
+              - email_log collection tracks every send (kind, status, error, sent_at)
+              - signed unsubscribe token (sha256 of user_id + JWT_SECRET)
+            New endpoints:
+              - GET  /api/email/unsubscribe?u=<id>&t=<token> — public unsubscribe
+              - GET  /api/admin/email-log — recent 500 events + counts by kind (admin only)
+              - POST /api/admin/email-drip-now — manual sweep trigger (admin only)
+            Hooks added in /api/auth/register and the Stripe checkout-status flow
+            so welcome + payment-receipt emails fire automatically (non-blocking).
+            RESEND_API_KEY env is intentionally empty so all sends are no-op until
+            user provides the key. drip_loop logs "skipped" entries when not configured.
+        -working: true
+          agent: "testing"
+          comment: |
+            All 12 email-infrastructure test cases PASS via public REACT_APP_BACKEND_URL
+            (https://fitbot-whatsapp.preview.emergentagent.com/api). RESEND_API_KEY
+            is empty as expected — all sends no-op gracefully.
+              1) POST /api/auth/register (emailtest_<rand>@example.com / Test1234!)
+                 → 200 with token + user, no exception despite disabled email sending ✓
+              2) GET /api/admin/email-log (admin) → 200 {log: [], totals_by_kind: {}} ✓
+              3) POST /api/admin/email-drip-now (admin) → 200
+                 {skipped: true, reason: "RESEND_API_KEY not set"} ✓
+              4) POST /api/admin/email-drip-now (non-admin) → 403
+                 {detail: "Admin only"} ✓
+              5) GET /api/email/unsubscribe?u=fake&t=invalid → 400
+                 {detail: "Invalid unsubscribe link"} ✓
+              6) GET /api/email/unsubscribe (no params) → 422 ✓
+              7) backend.err.log contains "email drip loop started" — drip background
+                 task confirmed running ✓
+              8) Admin smoke tests all 200:
+                 /admin/metrics, /admin/promo-codes, /admin/influencers,
+                 /admin/influencer-earnings ✓
+            See /app/email_test.py for full repeatable suite. Admin login
+            (admin@fitlux.com / Admin@12345) returned role=admin.
+
   - task: "Admin dashboard endpoints (metrics, promo CRUD, payout)"
     implemented: true
     working: true
@@ -187,8 +236,7 @@ metadata:
   run_ui: false
 
 test_plan:
-  current_focus:
-    - "Admin dashboard endpoints (metrics, promo CRUD, payout)"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -217,3 +265,24 @@ agent_communication:
         with zero pending balance, and earnings listing all return 200. /admin/metrics returns
         all 9 expected keys with correct types (total_revenue_usd is a float). No backend issues
         observed in supervisor logs. Test suite saved at /app/backend_test.py for re-runs.
+    -agent: "testing"
+      message: |
+        Email drip + transactional infrastructure (Resend) fully verified — 12/12 tests
+        PASS via public REACT_APP_BACKEND_URL. RESEND_API_KEY is empty by design, so all
+        sends correctly no-op.
+          - POST /api/auth/register for fresh user (emailtest_<rand>@example.com /
+            Test1234!) → 200 with token + user; no exception despite disabled email.
+          - GET /api/admin/email-log (admin) → 200 {log: [], totals_by_kind: {}}.
+          - POST /api/admin/email-drip-now (admin) → 200
+            {skipped: true, reason: "RESEND_API_KEY not set"}.
+          - POST /api/admin/email-drip-now (non-admin) → 403 {"detail":"Admin only"}.
+          - GET /api/email/unsubscribe?u=fake&t=invalid → 400
+            {"detail":"Invalid unsubscribe link"}.
+          - GET /api/email/unsubscribe (no query params) → 422.
+          - Backend log contains "email drip loop started" (background task running,
+            confirmed in /var/log/supervisor/backend.err.log).
+          - Admin smoke endpoints: GET /api/admin/metrics, /admin/promo-codes,
+            /admin/influencers, /admin/influencer-earnings all 200.
+        Also observed /app/backend/server.py logs "[email:welcome] skipped — RESEND_API_KEY
+        not set" on the new-register call, confirming the non-blocking hook path is wired
+        correctly. Suite at /app/email_test.py. No blockers; ready to merge.

@@ -1,27 +1,49 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "FitLux",
+    "slug": "fitlux",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
-    "userInterfaceStyle": "automatic",
+    "scheme": "fitlux",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "primaryColor": "#D4A54C",
+    "description": "Your AI-powered personal fitness coach. Build a custom workout plan, track schedule, and shop premium supplements.",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.fitlux.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Used to scan progress photos.",
+        "NSPhotoLibraryUsageDescription": "Pick progress photos from your library.",
+        "NSUserTrackingUsageDescription": "Used to personalise your fitness plan and improve the app.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.fitlux.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#000000"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "VIBRATE",
+        "POST_NOTIFICATIONS"
+      ]
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "FitLux",
+      "shortName": "FitLux",
+      "themeColor": "#D4A54C",
+      "backgroundColor": "#0A0A0A"
     },
     "plugins": [
       "expo-router",
@@ -31,7 +53,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#0A0A0A"
         }
       ],
       "expo-web-browser",
@@ -39,6 +61,15 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "to-be-set-by-eas-init"
+      }
+    },
+    "owner": "to-be-set",
+    "runtimeVersion": {
+      "policy": "appVersion"
     }
   }
 }

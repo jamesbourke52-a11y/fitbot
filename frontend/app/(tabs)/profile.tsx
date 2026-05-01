@@ -1,6 +1,6 @@
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { LogOut, RefreshCw, MessageCircle, ShieldCheck } from "lucide-react-native";
+import { LogOut, RefreshCw, MessageCircle, ShieldCheck, FileText, Shield } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../../src/auth";
 import { colors } from "../../src/theme";
@@ -61,12 +61,24 @@ export default function Profile() {
         <View style={s.section}>
           <Text style={s.sectionTitle}>NOTIFICATIONS</Text>
           <View style={s.infoBox}>
-            <Text style={s.infoTitle}>WhatsApp reminders</Text>
+            <Text style={s.infoTitle}>In-app reminders</Text>
             <Text style={s.infoText}>
-              WhatsApp integration coming soon. For now, your wake / workout / meal / sleep reminders
-              are visible on the Home tab schedule.
+              Your wake / workout / meal / sleep reminders are visible on the
+              Home tab schedule. Email reminders are coming soon.
             </Text>
           </View>
+        </View>
+
+        <View style={s.section}>
+          <Text style={s.sectionTitle}>LEGAL</Text>
+          <TouchableOpacity testID="profile-privacy" style={s.row} onPress={() => router.push("/privacy")}>
+            <Shield color={colors.primary} size={18} />
+            <Text style={s.rowText}>Privacy policy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="profile-terms" style={s.row} onPress={() => router.push("/terms")}>
+            <FileText color={colors.primary} size={18} />
+            <Text style={s.rowText}>Terms of service</Text>
+          </TouchableOpacity>
         </View>
 
         <TouchableOpacity testID="logout-btn" style={s.logoutBtn} onPress={onLogout}>

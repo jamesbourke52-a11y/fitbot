@@ -6,6 +6,7 @@ load_dotenv(ROOT_DIR / '.env')
 
 import os
 import uuid
+import asyncio
 import logging
 import bcrypt
 import jwt
@@ -161,6 +162,12 @@ async def register(req: RegisterRequest):
     token = create_access_token(user_id, email)
     user_doc.pop("password_hash", None)
     user_doc.pop("_id", None)
+    # Fire welcome email (non-blocking — failures don't break signup)
+    try:
+        from email_service import send_welcome
+        asyncio.create_task(send_welcome(db, user_doc))
+    except Exception as e:
+        logger.warning(f"welcome email task failed to queue: {e}")
     return AuthResponse(token=token, user=user_doc)
 
 
@@ -936,6 +943,11 @@ async def checkout_status_endpoint(session_id: str, http_request: Request,
             await _grant_access(user["id"], md.get("plan", "monthly"),
                                 int(md.get("days", "30")), session_id)
             await _credit_influencer(md, user["id"], session_id)
+            try:
+                from email_service import send_payment_confirmation
+                asyncio.create_task(send_payment_confirmation(db, user, md.get("plan", "monthly")))
+            except Exception as e:
+                logger.warning(f"payment email task failed to queue: {e}")
     return {"status": new_status, "payment_status": payment_status,
             "subscription": await subscription_status_endpoint(user)}
 
@@ -1106,6 +1118,36 @@ async def admin_metrics(user: dict = Depends(require_admin)):
     }
 
 
+@api_router.get("/admin/email-log")
+async def admin_email_log(user: dict = Depends(require_admin)):
+    log = await db.email_log.find({}, {"_id": 0}).sort("sent_at", -1).limit(500).to_list(500)
+    by_kind: dict = {}
+    for row in log:
+        by_kind[row["kind"]] = by_kind.get(row["kind"], 0) + 1
+    return {"log": log, "totals_by_kind": by_kind}
+
+
+@api_router.post("/admin/email-drip-now")
+async def trigger_drip_sweep_now(user: dict = Depends(require_admin)):
+    """Manually run a drip sweep for testing."""
+    from email_service import drip_sweep
+    res = await drip_sweep(db)
+    return res
+
+
+# Public unsubscribe endpoint — token validated, no auth needed.
+@api_router.get("/email/unsubscribe")
+async def email_unsubscribe(u: str, t: str):
+    from email_service import _unsubscribe_token
+    if t != _unsubscribe_token(u):
+        raise HTTPException(status_code=400, detail="Invalid unsubscribe link")
+    await db.users.update_one({"id": u}, {"$set": {"unsubscribed": True}})
+    return {"unsubscribed": True,
+            "message": "You're unsubscribed from FitLux marketing emails. "
+                       "You'll still receive transactional emails (payment "
+                       "receipts, password resets) as required by law."}
+
+
 
 
 @app.on_event("startup")
@@ -1196,6 +1238,14 @@ async def startup():
             }},
             upsert=True,
         )
+
+    # Spawn the email drip background sweep (no-op if RESEND_API_KEY is empty).
+    try:
+        from email_service import drip_loop
+        asyncio.create_task(drip_loop(db, interval_seconds=1800))
+        logger.info("email drip loop started")
+    except Exception as e:
+        logger.warning(f"could not start email drip loop: {e}")
 
 
 @app.on_event("shutdown")
