@@ -61,9 +61,11 @@ def _img(cat: str, idx: int) -> str:
 # Compact tuple format → expanded into product dicts:
 # (id_suffix, name, tagline, search, price_usd, [benefits...])
 _PROTEIN = [
-    ("on-gold",   "Optimum Nutrition Gold Standard Whey",  "24g whey protein per scoop",
-     "Optimum Nutrition Gold Standard Whey Protein 5lb", "$59.99",
-     ["24g protein", "Fast absorbing", "Trusted brand"]),
+    ("on-gold",   "Optimum Nutrition Gold Standard Whey",  "24g whey protein per scoop · world's #1",
+     "Optimum Nutrition Gold Standard Whey Protein 5lb", "£49.99",
+     ["24g protein", "Fast absorbing", "World's #1 selling whey"],
+     "B000QSNYGI",
+     "https://m.media-amazon.com/images/I/71gR9O4i6cL._AC_SX569_.jpg"),
     ("myprotein", "MyProtein Impact Whey Protein",          "21g per serving · 60+ flavours",
      "MyProtein Impact Whey Protein", "$39.99",
      ["High protein", "Affordable", "Bestseller"]),
@@ -442,7 +444,12 @@ _CALI = [
 def _build(cat: str, items: list) -> list:
     out = []
     for idx, t in enumerate(items):
-        slug, name, tagline, search, price, benefits = t
+        # Tuples can be (slug, name, tagline, search, price, benefits) OR
+        # (slug, name, tagline, search, price, benefits, asin, image_url) when
+        # the product has been verified with a real Amazon ASIN + image.
+        slug, name, tagline, search, price, benefits = t[:6]
+        asin = t[6] if len(t) > 6 else None
+        custom_image = t[7] if len(t) > 7 else None
         out.append({
             "id": f"{cat}-{slug}",
             "name": name,
@@ -450,10 +457,11 @@ def _build(cat: str, items: list) -> list:
             "description": tagline,
             "price": price,
             "category": cat,
-            "image": _img(cat, idx),
-            "asin": None,
+            "image": custom_image or _img(cat, idx),
+            "asin": asin,
             "search": search,
             "benefits": benefits,
+            "verified": bool(asin),
         })
     return out
 

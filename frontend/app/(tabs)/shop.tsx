@@ -12,6 +12,7 @@ import { colors } from "../../src/theme";
 type Product = {
   id: string; name: string; tagline: string; description: string; price: string;
   category: string; image: string; buy_url: string; benefits: string[];
+  verified?: boolean;
 };
 
 type Category = { id: string; label: string; image: string };
@@ -167,6 +168,12 @@ export default function Shop() {
           >
             <View style={s.imgWrap}>
               <Image source={{ uri: p.image }} style={s.img} />
+              {p.verified && (
+                <View style={s.verifiedPill}>
+                  <Check color="#000" size={10} />
+                  <Text style={s.verifiedText}>VERIFIED</Text>
+                </View>
+              )}
             </View>
             <View style={s.cardBody}>
               <Text style={s.cat}>{(categories.find((c) => c.id === p.category)?.label || p.category).toUpperCase()}</Text>
@@ -285,6 +292,8 @@ const s = StyleSheet.create({
   card: { flex: 1, backgroundColor: colors.surface, borderRadius: 20, overflow: "hidden", borderColor: colors.border, borderWidth: 1 },
   imgWrap: { height: 130, backgroundColor: "#0A0A0A", alignItems: "center", justifyContent: "center" },
   img: { width: "100%", height: "100%", resizeMode: "cover" },
+  verifiedPill: { position: "absolute", top: 8, left: 8, flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999 },
+  verifiedText: { color: "#000", fontSize: 9, fontWeight: "900", letterSpacing: 1 },
   cardBody: { padding: 12 },
   cat: { color: colors.primary, fontSize: 9, letterSpacing: 1.5, fontWeight: "800" },
   name: { color: colors.text, fontSize: 14, fontWeight: "700", marginTop: 4, height: 36 },
