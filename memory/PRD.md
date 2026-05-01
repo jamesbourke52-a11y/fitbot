@@ -43,6 +43,12 @@ links) and long-form disclosure inside every product detail modal, meeting the
 Amazon Associates Program Operating Agreement requirements for identification
 as a participant.
 
+Tracking ID: `jamesbourke52-20` (active in CA, DE, ES, FR, IT, NL, PL, SE, UK).
+Catalog: 120 curated best-sellers across 6 categories
+(Protein/Drinks/Snacks · Men's Wear · Women's Wear · Gym Equipment ·
+Health Supplements · Calisthenics) — all served via Amazon search URLs so
+listings stay current; defined in /app/backend/products_catalog.py.
+
 ## Smart enhancement
 The reminder timeline is recomputed every quiz submission from the user's wake time
 + work hours, so the workout slot fits the user's actual life — they see, e.g.,

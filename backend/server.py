@@ -696,22 +696,33 @@ async def coach_history(user: dict = Depends(get_current_user)):
 
 
 # ----------------------- Products & Amazon Affiliate -----------------------
+# Approved Amazon Associates marketplaces for tag jamesbourke52-20:
+# CA, DE, ES, FR, IT, NL, PL, SE, UK. Update env per region as more get
+# approved (AMAZON_TAG_US, AMAZON_TAG_IN, etc.).
 AMAZON_DOMAINS = {
-    "US": "amazon.com",
     "UK": "amazon.co.uk",
-    "IN": "amazon.in",
     "CA": "amazon.ca",
     "DE": "amazon.de",
+    "FR": "amazon.fr",
+    "IT": "amazon.it",
+    "NL": "amazon.nl",
+    "PL": "amazon.pl",
+    "ES": "amazon.es",
+    "SE": "amazon.se",
 }
+DEFAULT_REGION = "UK"
 
 
 def amazon_tag(region: str) -> str:
-    return os.environ.get(f"AMAZON_TAG_{region}", os.environ.get("AMAZON_TAG_US", "fitlux-20"))
+    return os.environ.get(
+        f"AMAZON_TAG_{region}",
+        os.environ.get("AMAZON_TAG_UK", "jamesbourke52-20"),
+    )
 
 
 def build_amazon_url(region: str, asin: Optional[str], keywords: str) -> str:
     from urllib.parse import quote
-    region = region if region in AMAZON_DOMAINS else "US"
+    region = region if region in AMAZON_DOMAINS else DEFAULT_REGION
     domain = AMAZON_DOMAINS[region]
     tag = amazon_tag(region)
     if asin:
@@ -719,96 +730,23 @@ def build_amazon_url(region: str, asin: Optional[str], keywords: str) -> str:
     return f"https://www.{domain}/s?k={quote(keywords)}&tag={tag}"
 
 
-# Each product has search keywords and (optional) US ASIN. ASIN stays the same
-# across Amazon regions for the same listing in most cases; if a region has no
-# listing, we fall back to a keyword search.
-SEED_PRODUCTS = [
-    {
-        "id": "p-protein",
-        "name": "Gold Whey Protein",
-        "tagline": "25g premium whey isolate",
-        "description": "Fast-absorbing whey protein isolate to fuel recovery and lean muscle growth. Ultra-filtered, low lactose, 25g protein per scoop.",
-        "price": "$49.99",
-        "category": "Protein",
-        "image": "https://images.pexels.com/photos/29107585/pexels-photo-29107585.jpeg",
-        "asin": "B000QSNYGI",  # Optimum Nutrition Gold Standard Whey 5lb
-        "search": "Optimum Nutrition Gold Standard Whey Protein 5lb",
-        "benefits": ["Lean muscle growth", "Fast recovery", "Low lactose"],
-    },
-    {
-        "id": "p-shilajit",
-        "name": "Pure Himalayan Shilajit",
-        "tagline": "Ancient mineral resin",
-        "description": "Authentic high-altitude shilajit packed with fulvic acid, trace minerals and antioxidants for energy, vitality and stamina.",
-        "price": "$34.99",
-        "category": "Vitality",
-        "image": "https://images.pexels.com/photos/29107657/pexels-photo-29107657.jpeg",
-        "asin": None,
-        "search": "Pure Himalayan Shilajit Resin authentic",
-        "benefits": ["Energy & stamina", "Mineral rich", "Antioxidant"],
-    },
-    {
-        "id": "p-creatine",
-        "name": "Creatine Monohydrate",
-        "tagline": "5g micronized — unflavoured",
-        "description": "The most studied supplement on the planet. Increases strength, power output and muscle volume.",
-        "price": "$24.99",
-        "category": "Performance",
-        "image": "https://images.pexels.com/photos/14963236/pexels-photo-14963236.jpeg",
-        "asin": None,
-        "search": "Optimum Nutrition Creatine Monohydrate Powder Unflavored",
-        "benefits": ["More strength", "Bigger pumps", "Faster recovery"],
-    },
-    {
-        "id": "p-multi",
-        "name": "Daily Multivitamin",
-        "tagline": "Complete A–Z formula",
-        "description": "Comprehensive blend of essential vitamins and minerals to fill nutritional gaps and support immunity and energy.",
-        "price": "$19.99",
-        "category": "Wellness",
-        "image": "https://images.pexels.com/photos/29107657/pexels-photo-29107657.jpeg",
-        "asin": None,
-        "search": "Centrum Adult Multivitamin",
-        "benefits": ["Daily nutrition", "Immunity", "Energy"],
-    },
-    {
-        "id": "p-omega",
-        "name": "Omega-3 Fish Oil",
-        "tagline": "1200mg EPA+DHA",
-        "description": "Premium triglyceride-form omega-3 for heart, brain and joint health. Burpless and lemon-flavoured.",
-        "price": "$22.99",
-        "category": "Wellness",
-        "image": "https://images.pexels.com/photos/29107585/pexels-photo-29107585.jpeg",
-        "asin": None,
-        "search": "Nordic Naturals Ultimate Omega 1280mg",
-        "benefits": ["Heart health", "Brain function", "Joint support"],
-    },
-    {
-        "id": "p-bcaa",
-        "name": "BCAA Recovery",
-        "tagline": "2:1:1 ratio • 7g per scoop",
-        "description": "Branched-chain amino acids to reduce soreness, support recovery and preserve muscle during intense training.",
-        "price": "$29.99",
-        "category": "Performance",
-        "image": "https://images.pexels.com/photos/14963236/pexels-photo-14963236.jpeg",
-        "asin": None,
-        "search": "Scivation Xtend BCAA powder 30 servings",
-        "benefits": ["Less soreness", "Faster recovery", "Endurance"],
-    },
-]
+from products_catalog import SEED_PRODUCTS, CATEGORIES
 
 
 @api_router.get("/products")
-async def list_products(region: str = "US"):
-    region = (region or "US").upper()
+async def list_products(region: str = DEFAULT_REGION, category: Optional[str] = None):
+    region = (region or DEFAULT_REGION).upper()
     products = []
     for p in SEED_PRODUCTS:
+        if category and p["category"] != category:
+            continue
         out = {k: v for k, v in p.items() if k != "asin" and k != "search"}
         out["buy_url"] = build_amazon_url(region, p.get("asin"), p["search"])
         products.append(out)
     return {
         "products": products,
-        "region": region if region in AMAZON_DOMAINS else "US",
+        "categories": CATEGORIES,
+        "region": region if region in AMAZON_DOMAINS else DEFAULT_REGION,
         "supported_regions": list(AMAZON_DOMAINS.keys()),
         "disclosure": (
             "FitLux is a participant in the Amazon Services LLC Associates "
@@ -819,6 +757,7 @@ async def list_products(region: str = "US"):
             "the date/time indicated on Amazon and are subject to change."
         ),
     }
+
 
 # ----------------------- Stripe Subscriptions (access-window model) -----------------------
 from emergentintegrations.payments.stripe.checkout import (
