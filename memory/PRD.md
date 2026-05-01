@@ -32,6 +32,25 @@ admin@fitlux.com / Admin@12345
 Additional admin emails auto-promoted from ADMIN_EMAILS env (currently jamesbourke52@gmail.com).
 In-app Admin Dashboard at /admin: metrics · promo code CRUD · influencer payouts · earnings feed.
 
+## Email (Resend)
+Backend: `/app/backend/email_service.py` — 4 drip emails (Day 1/3/7/14) + Welcome
++ Payment receipt. Background sweep every 30 min via `drip_loop`, idempotent
+via `email_log` collection, signed unsubscribe link.
+
+Set `RESEND_API_KEY` and `SENDER_EMAIL` in `/app/backend/.env` to enable
+sending; without the key all sends are skipped (no-op).
+
+Admin tab "Emails" shows recent log + manual "run drip sweep now" button.
+
+## App Store / Play Store
+- Bundle id: `com.fitlux.app` (iOS + Android)
+- Version 1.0.0 / build 1 / versionCode 1
+- App icon, adaptive icon, splash icon, favicon — all generated to `assets/images/`
+- In-app `/privacy` and `/terms` screens (linked from Profile tab)
+- EAS config at `/app/frontend/eas.json` for build + submit
+- Full App-Store + Play-Store submission pack at `/app/APP_STORE_SUBMISSION.md`
+  (descriptions, keywords, screenshots checklist, action items)
+
 ## Pricing (current)
 - Monthly subscription: $6.99 / 30 days
 - Yearly subscription: $67.10 / 365 days (≈ 20% off vs monthly)
