@@ -44,23 +44,20 @@ def level_for_xp(xp: int) -> dict:
 
 
 # ---------------- Level-specific prescribed training ----------------
-# Key lifts: % of bodyweight × reps (per working set). Accessories use fixed reps.
-# "sets" applies to all exercises at that level.
-LEVEL_PROGRAMMING = {
-    1: {  # Rookie
-        "sets": 3,
-        "key_lifts": [
-            {"id": "bench",    "name": "Bench press",      "bw_pct": 40, "reps": 8},
-            {"id": "squat",    "name": "Back squat",       "bw_pct": 50, "reps": 10},
-            {"id": "deadlift", "name": "Deadlift",         "bw_pct": 60, "reps": 8},
-            {"id": "ohp",      "name": "Overhead press",   "bw_pct": 30, "reps": 8},
-        ],
-        "accessories": [
-            {"id": "pushup",   "name": "Push-ups",         "reps": 8},
-            {"id": "row",      "name": "Seated row",       "reps": 10},
-            {"id": "plank_s",  "name": "Plank (seconds)",  "reps": 20},
-        ],
-    },
+# Each workout style has its own 8-level ladder. Exercises with `bodyweight=True`
+# are shown as reps-only (no weight calculation). Weighted lifts use `bw_pct` of
+# the user's bodyweight × an adjust factor.
+_GYM_PROGRAMMING = {
+    1: {"sets": 3, "key_lifts": [
+        {"id": "bench",    "name": "Bench press",      "bw_pct": 40, "reps": 8},
+        {"id": "squat",    "name": "Back squat",       "bw_pct": 50, "reps": 10},
+        {"id": "deadlift", "name": "Deadlift",         "bw_pct": 60, "reps": 8},
+        {"id": "ohp",      "name": "Overhead press",   "bw_pct": 30, "reps": 8},
+    ], "accessories": [
+        {"id": "pushup",   "name": "Push-ups",         "reps": 8},
+        {"id": "row",      "name": "Seated row",       "reps": 10},
+        {"id": "plank_s",  "name": "Plank (seconds)",  "reps": 20},
+    ]},
     2: {"sets": 3, "key_lifts": [
         {"id": "bench",    "name": "Bench press",      "bw_pct": 55, "reps": 8},
         {"id": "squat",    "name": "Back squat",       "bw_pct": 70, "reps": 10},
@@ -133,33 +130,220 @@ LEVEL_PROGRAMMING = {
     ]},
 }
 
+# Calisthenics — pure bodyweight progressions (no barbells).
+_CAL_PROGRAMMING = {
+    1: {"sets": 3, "key_lifts": [
+        {"id": "incpush", "name": "Incline push-ups",        "reps": 10, "bodyweight": True},
+        {"id": "bwsquat", "name": "Bodyweight squats",       "reps": 15, "bodyweight": True},
+        {"id": "asspull", "name": "Assisted pull-ups (band)","reps": 5,  "bodyweight": True},
+        {"id": "pike",    "name": "Pike push-ups",            "reps": 6,  "bodyweight": True},
+    ], "accessories": [
+        {"id": "hipraise","name": "Glute bridges",            "reps": 15},
+        {"id": "plank_s", "name": "Plank (seconds)",          "reps": 20},
+        {"id": "bwrow",   "name": "Inverted rows",            "reps": 8},
+    ]},
+    2: {"sets": 3, "key_lifts": [
+        {"id": "pushup",  "name": "Full push-ups",            "reps": 12, "bodyweight": True},
+        {"id": "airsq",   "name": "Air squats",               "reps": 20, "bodyweight": True},
+        {"id": "negpull", "name": "Negative pull-ups (3s)",   "reps": 5,  "bodyweight": True},
+        {"id": "pike",    "name": "Pike push-ups",            "reps": 10, "bodyweight": True},
+    ], "accessories": [
+        {"id": "lunge",   "name": "Walking lunges (each leg)","reps": 10},
+        {"id": "plank_s", "name": "Plank (seconds)",          "reps": 40},
+        {"id": "bwrow",   "name": "Inverted rows",            "reps": 12},
+    ]},
+    3: {"sets": 4, "key_lifts": [
+        {"id": "diamond", "name": "Diamond push-ups",          "reps": 10, "bodyweight": True},
+        {"id": "bulgar",  "name": "Bulgarian split squats",    "reps": 10, "bodyweight": True},
+        {"id": "pullup",  "name": "Strict pull-ups",           "reps": 6,  "bodyweight": True},
+        {"id": "dip",     "name": "Parallel bar dips",         "reps": 8,  "bodyweight": True},
+    ], "accessories": [
+        {"id": "lsit_s",  "name": "L-sit hold (seconds)",       "reps": 10},
+        {"id": "pistol",  "name": "Assisted pistol squats",     "reps": 5},
+        {"id": "pike",    "name": "Pike push-ups",               "reps": 12},
+    ]},
+    4: {"sets": 4, "key_lifts": [
+        {"id": "archpush","name": "Archer push-ups",            "reps": 8,  "bodyweight": True},
+        {"id": "pistol",  "name": "Pistol squats (unassisted)", "reps": 5,  "bodyweight": True},
+        {"id": "pullup",  "name": "Strict pull-ups",            "reps": 10, "bodyweight": True},
+        {"id": "wallHSPU","name": "Wall handstand push-ups",    "reps": 4,  "bodyweight": True},
+    ], "accessories": [
+        {"id": "dip",     "name": "Parallel bar dips",          "reps": 12},
+        {"id": "lsit_s",  "name": "L-sit hold (seconds)",        "reps": 20},
+        {"id": "muscleup","name": "Muscle-up progression",      "reps": 3},
+    ]},
+    5: {"sets": 5, "key_lifts": [
+        {"id": "oap",     "name": "One-arm push-up progression","reps": 3,  "bodyweight": True},
+        {"id": "pistol",  "name": "Pistol squats",              "reps": 8,  "bodyweight": True},
+        {"id": "wpull",   "name": "Weighted pull-ups",          "reps": 6,  "bodyweight": True},
+        {"id": "frontlvr","name": "Front lever tuck (seconds)", "reps": 15, "bodyweight": True},
+    ], "accessories": [
+        {"id": "muscleup","name": "Muscle-ups",                 "reps": 5},
+        {"id": "wallHSPU","name": "Wall handstand push-ups",    "reps": 6},
+        {"id": "lsit_s",  "name": "L-sit hold (seconds)",        "reps": 30},
+    ]},
+    6: {"sets": 5, "key_lifts": [
+        {"id": "oap",     "name": "One-arm push-ups",           "reps": 5,  "bodyweight": True},
+        {"id": "shrimp",  "name": "Shrimp squats",              "reps": 6,  "bodyweight": True},
+        {"id": "frontlvr","name": "Front lever (seconds)",       "reps": 10, "bodyweight": True},
+        {"id": "hspu",    "name": "Freestanding HSPU",           "reps": 4,  "bodyweight": True},
+    ], "accessories": [
+        {"id": "humanflag","name": "Human flag progression",    "reps": 3},
+        {"id": "planche",  "name": "Planche lean (seconds)",     "reps": 20},
+        {"id": "muscleup", "name": "Strict muscle-ups",          "reps": 6},
+    ]},
+    7: {"sets": 6, "key_lifts": [
+        {"id": "oap",     "name": "One-arm push-ups",           "reps": 8,  "bodyweight": True},
+        {"id": "oapull",  "name": "One-arm chin-up progression","reps": 2,  "bodyweight": True},
+        {"id": "frontlvr","name": "Full front lever (seconds)",  "reps": 15, "bodyweight": True},
+        {"id": "planche", "name": "Straddle planche (seconds)",  "reps": 8,  "bodyweight": True},
+    ], "accessories": [
+        {"id": "humanflag","name": "Human flag (seconds)",      "reps": 8},
+        {"id": "hspu",     "name": "Freestanding HSPU",          "reps": 8},
+        {"id": "backlvr",  "name": "Back lever (seconds)",        "reps": 10},
+    ]},
+    8: {"sets": 6, "key_lifts": [
+        {"id": "oap",     "name": "Deep one-arm push-ups",      "reps": 10, "bodyweight": True},
+        {"id": "oapull",  "name": "Full one-arm pull-up",        "reps": 3,  "bodyweight": True},
+        {"id": "planche", "name": "Full planche (seconds)",      "reps": 5,  "bodyweight": True},
+        {"id": "ironx",   "name": "Iron cross progression",      "reps": 3,  "bodyweight": True},
+    ], "accessories": [
+        {"id": "humanflag","name": "Full human flag (seconds)", "reps": 15},
+        {"id": "maltese",  "name": "Maltese progression",        "reps": 3},
+        {"id": "hefestop", "name": "Hefesto pull-up",             "reps": 1},
+    ]},
+}
 
-def build_prescription(level_id: int, bodyweight_kg: float, adjust: float = 1.0, unit: str = "metric") -> dict:
-    """Return the prescribed weights/reps for a user at a given level + adjust factor."""
-    prog = LEVEL_PROGRAMMING.get(level_id, LEVEL_PROGRAMMING[1])
+# Home — minimal equipment (bands, one pair of dumbbells), no barbells.
+_HOME_PROGRAMMING = {
+    1: {"sets": 3, "key_lifts": [
+        {"id": "dbpress", "name": "Dumbbell chest press",    "bw_pct": 20, "reps": 10},
+        {"id": "goblet",  "name": "Goblet squat",            "bw_pct": 25, "reps": 12},
+        {"id": "dbrow",   "name": "DB rows (each arm)",      "bw_pct": 20, "reps": 10},
+        {"id": "dbohp",   "name": "Dumbbell shoulder press", "bw_pct": 15, "reps": 10},
+    ], "accessories": [
+        {"id": "pushup",  "name": "Push-ups",                 "reps": 10},
+        {"id": "plank_s", "name": "Plank (seconds)",          "reps": 30},
+        {"id": "lunge",   "name": "Reverse lunges",           "reps": 10},
+    ]},
+    2: {"sets": 3, "key_lifts": [
+        {"id": "dbpress", "name": "Dumbbell chest press",    "bw_pct": 30, "reps": 10},
+        {"id": "goblet",  "name": "Goblet squat",            "bw_pct": 35, "reps": 12},
+        {"id": "dbrow",   "name": "DB rows (each arm)",      "bw_pct": 28, "reps": 10},
+        {"id": "dbohp",   "name": "Dumbbell shoulder press", "bw_pct": 22, "reps": 10},
+    ], "accessories": [
+        {"id": "dipbench","name": "Bench dips",               "reps": 12},
+        {"id": "plank_s", "name": "Plank (seconds)",          "reps": 45},
+        {"id": "bulgar",  "name": "Bulgarian split squats",   "reps": 8},
+    ]},
+    3: {"sets": 4, "key_lifts": [
+        {"id": "dbpress", "name": "Dumbbell chest press",    "bw_pct": 40, "reps": 8},
+        {"id": "frontsq", "name": "DB front squat",           "bw_pct": 45, "reps": 10},
+        {"id": "dbrow",   "name": "DB rows (each arm)",      "bw_pct": 35, "reps": 8},
+        {"id": "dbohp",   "name": "Dumbbell shoulder press", "bw_pct": 28, "reps": 8},
+    ], "accessories": [
+        {"id": "pullup",  "name": "Pull-ups",                 "reps": 6},
+        {"id": "lsit_s",  "name": "L-sit hold (seconds)",      "reps": 15},
+        {"id": "diamond", "name": "Diamond push-ups",          "reps": 10},
+    ]},
+    4: {"sets": 4, "key_lifts": [
+        {"id": "dbpress", "name": "Dumbbell chest press",    "bw_pct": 50, "reps": 6},
+        {"id": "frontsq", "name": "DB front squat",           "bw_pct": 55, "reps": 8},
+        {"id": "rdl",     "name": "DB Romanian deadlift",     "bw_pct": 60, "reps": 8},
+        {"id": "dbohp",   "name": "Dumbbell shoulder press", "bw_pct": 35, "reps": 8},
+    ], "accessories": [
+        {"id": "pullup",  "name": "Pull-ups",                 "reps": 10},
+        {"id": "pistol",  "name": "Assisted pistol squats",   "reps": 5},
+        {"id": "archpush","name": "Archer push-ups",           "reps": 6},
+    ]},
+    5: {"sets": 5, "key_lifts": [
+        {"id": "dbpress", "name": "Dumbbell chest press",    "bw_pct": 60, "reps": 6},
+        {"id": "frontsq", "name": "DB front squat",           "bw_pct": 65, "reps": 8},
+        {"id": "rdl",     "name": "DB Romanian deadlift",     "bw_pct": 70, "reps": 6},
+        {"id": "dbohp",   "name": "Dumbbell shoulder press", "bw_pct": 40, "reps": 6},
+    ], "accessories": [
+        {"id": "wpull",   "name": "Weighted pull-ups",        "reps": 6},
+        {"id": "pistol",  "name": "Pistol squats",            "reps": 6},
+        {"id": "hspu",    "name": "Wall handstand push-ups",  "reps": 5},
+    ]},
+    6: {"sets": 5, "key_lifts": [
+        {"id": "dbpress", "name": "Dumbbell chest press",    "bw_pct": 70, "reps": 5},
+        {"id": "frontsq", "name": "DB front squat",           "bw_pct": 80, "reps": 6},
+        {"id": "rdl",     "name": "DB Romanian deadlift",     "bw_pct": 85, "reps": 5},
+        {"id": "dbohp",   "name": "Dumbbell shoulder press", "bw_pct": 50, "reps": 6},
+    ], "accessories": [
+        {"id": "wpull",   "name": "Weighted pull-ups",        "reps": 10},
+        {"id": "oap",     "name": "One-arm push-ups progression","reps": 3},
+        {"id": "muscleup","name": "Muscle-ups",                "reps": 5},
+    ]},
+    7: {"sets": 6, "key_lifts": [
+        {"id": "dbpress", "name": "Dumbbell chest press",    "bw_pct": 80, "reps": 4},
+        {"id": "frontsq", "name": "DB front squat",           "bw_pct": 90, "reps": 5},
+        {"id": "rdl",     "name": "DB Romanian deadlift",     "bw_pct": 100, "reps": 4},
+        {"id": "dbohp",   "name": "Dumbbell shoulder press", "bw_pct": 55, "reps": 5},
+    ], "accessories": [
+        {"id": "wpull",   "name": "Weighted pull-ups",        "reps": 12},
+        {"id": "oap",     "name": "One-arm push-ups",          "reps": 5},
+        {"id": "frontlvr","name": "Front lever (seconds)",     "reps": 10},
+    ]},
+    8: {"sets": 6, "key_lifts": [
+        {"id": "dbpress", "name": "Dumbbell chest press",    "bw_pct": 90, "reps": 3},
+        {"id": "frontsq", "name": "DB front squat",           "bw_pct": 100, "reps": 4},
+        {"id": "rdl",     "name": "DB Romanian deadlift",     "bw_pct": 110, "reps": 3},
+        {"id": "dbohp",   "name": "Dumbbell shoulder press", "bw_pct": 60, "reps": 4},
+    ], "accessories": [
+        {"id": "oap",     "name": "Deep one-arm push-ups",    "reps": 8},
+        {"id": "planche", "name": "Planche (seconds)",         "reps": 5},
+        {"id": "oapull",  "name": "One-arm pull-up",           "reps": 2},
+    ]},
+}
+
+LEVEL_PROGRAMMING = {
+    "gym":          _GYM_PROGRAMMING,
+    "calisthenics": _CAL_PROGRAMMING,
+    "home":         _HOME_PROGRAMMING,
+    "mixed":        _GYM_PROGRAMMING,  # mixed defaults to gym
+}
+
+
+def build_prescription(level_id: int, bodyweight_kg: float, adjust: float = 1.0,
+                        unit: str = "metric", style: str = "gym") -> dict:
+    """Return the prescribed weights/reps for a user at a given level + style."""
+    style_key = style if style in LEVEL_PROGRAMMING else "gym"
+    prog_set = LEVEL_PROGRAMMING[style_key]
+    prog = prog_set.get(level_id, prog_set[1])
     factor = max(0.6, min(1.6, adjust))
+    step = 5.0 if unit == "imperial" else 2.5
+
+    def _reps(base: int) -> int:
+        return max(1, int(round(base * (2 - factor))))
+
     key_lifts = []
     for lift in prog["key_lifts"]:
+        if lift.get("bodyweight"):
+            # Bodyweight exercise — no weight calc, just reps that scale
+            key_lifts.append({
+                "id": lift["id"], "name": lift["name"],
+                "sets": prog["sets"], "reps": _reps(lift["reps"]),
+                "bodyweight": True,
+            })
+            continue
         kg = bodyweight_kg * (lift["bw_pct"] / 100.0) * factor
         weight_display = round(kg * 2.2046226, 1) if unit == "imperial" else round(kg, 1)
-        # Round to nearest 2.5kg / 5lb for realistic plate loading
-        step = 5.0 if unit == "imperial" else 2.5
         weight_display = round(weight_display / step) * step
         key_lifts.append({
             "id": lift["id"], "name": lift["name"],
-            "sets": prog["sets"],
-            "reps": max(1, int(round(lift["reps"] * (2 - factor)))),  # easier → more reps, harder → fewer
+            "sets": prog["sets"], "reps": _reps(lift["reps"]),
             "weight_display": weight_display,
             "weight_unit": "lb" if unit == "imperial" else "kg",
             "bw_pct": lift["bw_pct"],
         })
     accessories = [
-        {**a, "sets": prog["sets"],
-         "reps": max(1, int(round(a["reps"] * (2 - factor))))}
+        {**a, "sets": prog["sets"], "reps": _reps(a["reps"])}
         for a in prog["accessories"]
     ]
     return {
-        "level_id": level_id,
+        "level_id": level_id, "style": style_key,
         "sets": prog["sets"],
         "key_lifts": key_lifts,
         "accessories": accessories,
