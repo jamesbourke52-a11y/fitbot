@@ -32,6 +32,21 @@ admin@fitlux.com / Admin@12345
 Additional admin emails auto-promoted from ADMIN_EMAILS env (currently jamesbourke52@gmail.com).
 In-app Admin Dashboard at /admin: metrics · promo code CRUD · influencer payouts · earnings feed.
 
+## Progress tracking + gamification (v1.1)
+- **Progress tab** (bottom nav slot #3): Overview · Body · Photos · Strength
+- **Body weight log**: metric/imperial toggle per user, trend chart (SVG), insight line
+- **Body measurements**: 11 body parts (neck, shoulders, chest, L/R arm, waist, hips, L/R thigh, L/R calf) with history
+- **Progress photos**: front/side/back poses, base64 storage, horizontal gallery per pose, upload via `expo-image-picker`
+- **Strength PRs**: auto-detects new PRs per exercise, logs reps + weight
+- **Summary + insights** endpoint computes "Δ over N days" text
+- **Share card** at 30/60/90 days: before/after photos + weight delta, shareable via native share sheet
+- **Level system** (8 ranks: Rookie → Novice → Athlete → Warrior → Beast → Titan → Legend → EXTREME):
+  - XP earned: workout +25, measurement +10, photo +15, PR +50, daily login +5
+  - User picks starting rank in `/level-up` screen (mapped to min-XP of that rank)
+  - XP bar + next-rank progress shown on Progress → Overview card
+- Moved Profile out of bottom tabs → now a tappable avatar in the Home header.
+- Backend: `/app/backend/progress_service.py` + new endpoints under `/api/progress/*`, `/api/me/level`, `/api/me/prefs`, `/api/levels`. 30/30 tests pass.
+
 ## Email (Resend)
 Backend: `/app/backend/email_service.py` — 4 drip emails (Day 1/3/7/14) + Welcome
 + Payment receipt. Background sweep every 30 min via `drip_loop`, idempotent
