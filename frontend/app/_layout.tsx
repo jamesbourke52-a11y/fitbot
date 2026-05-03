@@ -20,6 +20,7 @@ export default function RootLayout() {
             <Stack.Screen name="admin" />
             <Stack.Screen name="privacy" />
             <Stack.Screen name="terms" />
+            <Stack.Screen name="level-up" />
             <Stack.Screen name="(tabs)" />
           </Stack>
         </AuthProvider>

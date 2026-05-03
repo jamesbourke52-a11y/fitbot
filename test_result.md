@@ -229,10 +229,96 @@ frontend:
             "Admin dashboard" link only when user.role === "admin". index.tsx now routes admins
             directly to /admin on app load.
 
+  - task: "Progress tracking + gamification (levels, weight, measurements, photos, strength, share-card)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+          agent: "testing"
+          comment: |
+            Full progress + gamification backend verified end-to-end — 30/30 requested
+            tests PASS via public REACT_APP_BACKEND_URL
+            (https://fitbot-whatsapp.preview.emergentagent.com/api). Fresh user
+            progtest_<rand>@example.com / Pass1234! registered; admin
+            admin@fitlux.com / Admin@12345 used for /admin/metrics smoke.
+
+            LEVEL SYSTEM
+              1) GET /api/levels → 200 with 8 entries Rookie→EXTREME; each has
+                 id/slug/name/emoji/min_xp/desc/intensity/color ✓
+
+            PREFERENCES
+              2) GET /api/me/prefs (fresh) → {units:"metric", starting_level:1} ✓
+              3) PATCH units=imperial → 200; subsequent GET returns imperial ✓
+              4) PATCH starting_level=4 → 200; GET /api/me/level then returns
+                 level.name=="Warrior" and xp==700 (>= 700 min_xp) ✓
+              5) PATCH starting_level=99 → 400 "starting_level out of range" ✓
+              6) PATCH {} → 400 "Nothing to update" ✓
+              7) PATCH units=invalid → 400 "units must be metric or imperial" ✓
+
+            WEIGHT
+              8) POST /api/progress/weight {75, metric} → entry.weight_kg==75.0,
+                 xp.xp_delta==10 ✓
+              9) POST /api/progress/weight {170, imperial} → entry.weight_kg==77.11
+                 (170/2.2046) ✓
+             10) GET /api/progress/weight → 200 with 2 entries, each has
+                 weight_display, unit matches current pref (metric) ✓
+
+            MEASUREMENTS
+             11) POST /api/progress/measurements {chest:100, left_arm:36, waist:85}
+                 → entry.values_cm has all 3 keys, xp.xp_delta==10 ✓
+             12) POST /api/progress/measurements empty → 400
+                 "Provide at least one measurement" ✓
+             13) GET /api/progress/measurements → entries[], fields list, unit,
+                 each entry has values_display ✓
+
+            PHOTOS
+             14) POST /api/progress/photos {data:image/jpeg;base64,AAAA, front}
+                 → entry.pose=="front", xp.xp_delta==15 ✓
+             15) POST photos image="not-a-base64" → 400 "Expected base64 data URL" ✓
+             16) POST photos pose="invalid" → 400 "Invalid pose" ✓
+             17) GET /api/progress/photos → 200 with >=1 photo ✓
+             18) GET /api/progress/photos?pose=front → all entries pose=="front" ✓
+             19) DELETE /api/progress/photos/{id} → {deleted:true};
+                 re-DELETE same id → 404 "Photo not found" ✓
+
+            STRENGTH
+             20) POST strength bench 80×5 → is_pr=true, xp.xp_delta==50 ✓
+             21) POST strength bench 70×8 → is_pr=false, xp.xp_delta==10 ✓
+             22) POST strength bench 85×3 → is_pr=true ✓
+             23) GET /api/progress/strength → entries length==3, prs has
+                 one entry for "bench press" at weight_kg==85.0 ✓
+
+            SUMMARY + SHARE CARD
+             24) GET /api/progress/summary → weight_count=2, measurement_count=1,
+                 photo_count=1 (>=0 post-DELETE), strength_count=3,
+                 insight="+2.11 kg over 1 day" (contains delta) ✓
+             25) GET /api/progress/share-card/30 → all 8 keys
+                 (days, unit, name, photos_before, photos_after,
+                 weight_before, weight_after, ready) ✓
+             26) GET /api/progress/share-card/45 → 400
+                 "days must be 30, 60 or 90" ✓
+
+            SMOKE
+             27) GET /api/auth/me (fresh user token) → 200 ✓
+             28) GET /api/admin/metrics (admin) → 200 ✓
+
+            AUTH GATING
+             29) GET /api/me/level (no Authorization) → 401 ✓
+             30) GET /api/progress/weight (no Authorization) → 401 ✓
+
+            XP awarding observed correctly through starting_level=4 seed
+            (xp rose 700 → 710 → 730 → 870 across actions). PR detection
+            is_pr flag flips true/false based on max weight_kg per exercise.
+            No blockers; test suite saved at /app/progress_test.py.
+
 metadata:
   created_by: "main_agent"
-  version: "1.1"
-  test_sequence: 1
+  version: "1.2"
+  test_sequence: 2
   run_ui: false
 
 test_plan:
@@ -286,3 +372,35 @@ agent_communication:
         Also observed /app/backend/server.py logs "[email:welcome] skipped — RESEND_API_KEY
         not set" on the new-register call, confirming the non-blocking hook path is wired
         correctly. Suite at /app/email_test.py. No blockers; ready to merge.
+    -agent: "testing"
+      message: |
+        Progress + gamification backend fully verified — 30/30 requested test
+        steps PASS via public REACT_APP_BACKEND_URL. Suite saved at
+        /app/progress_test.py.
+        Highlights:
+          - /api/levels returns 8 entries Rookie→EXTREME with full schema
+            (id/slug/name/emoji/min_xp/desc/intensity/color).
+          - /api/me/prefs defaults {metric, starting_level=1}. PATCH validates
+            units enum, starting_level 1..8, rejects empty body, rejects
+            unknown units with 400.
+          - PATCH starting_level=4 seeds xp>=700 so /api/me/level returns
+            Warrior. XP awarding observed correctly: weight +10, measurement
+            +10, photo +15, strength PR +50 / non-PR +10.
+          - Weight imperial 170 → 77.11 kg; GET returns weight_display +
+            unit matching current user pref.
+          - Measurements require at least one field (400 otherwise); GET
+            returns entries[], fields[], unit, and per-entry values_display.
+          - Photos: pose enum enforced (front/side/back); base64 data URL
+            prefix enforced; DELETE idempotent (re-delete → 404); pose filter
+            returns only matching pose.
+          - Strength PR flag flips correctly across 3 bench entries (80 PR,
+            70 not PR, 85 PR); GET /progress/strength returns 3 entries and
+            prs list with 85 kg bench.
+          - /progress/summary correctly counts and produces insight
+            "+2.11 kg over 1 day".
+          - /progress/share-card/30 returns all 8 keys (days, unit, name,
+            photos_before, photos_after, weight_before, weight_after, ready);
+            /share-card/45 → 400.
+          - Auth gating: unauth GET /me/level and /progress/weight → 401.
+          - Smoke: /auth/me (fresh user) + /admin/metrics (admin) still 200.
+        No blockers observed in backend logs. Ready to ship.

@@ -1,5 +1,5 @@
 import { Tabs } from "expo-router";
-import { Home, Sparkles, MessageCircle, ShoppingBag, User } from "lucide-react-native";
+import { Home, Sparkles, MessageCircle, ShoppingBag, TrendingUp } from "lucide-react-native";
 import { colors } from "../../src/theme";
 
 export default function TabsLayout() {
@@ -21,9 +21,10 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "Home", tabBarIcon: ({ color }) => <Home color={color} size={22} /> }} />
       <Tabs.Screen name="plan" options={{ title: "Plan", tabBarIcon: ({ color }) => <Sparkles color={color} size={22} /> }} />
+      <Tabs.Screen name="progress" options={{ title: "Progress", tabBarIcon: ({ color }) => <TrendingUp color={color} size={22} /> }} />
       <Tabs.Screen name="coach" options={{ title: "Coach", tabBarIcon: ({ color }) => <MessageCircle color={color} size={22} /> }} />
       <Tabs.Screen name="shop" options={{ title: "Shop", tabBarIcon: ({ color }) => <ShoppingBag color={color} size={22} /> }} />
-      <Tabs.Screen name="profile" options={{ title: "Profile", tabBarIcon: ({ color }) => <User color={color} size={22} /> }} />
+      <Tabs.Screen name="profile" options={{ href: null }} />
     </Tabs>
   );
 }

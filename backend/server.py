@@ -1118,6 +1118,310 @@ async def admin_metrics(user: dict = Depends(require_admin)):
     }
 
 
+# ----------------------- Progress tracking & gamification -----------------------
+from progress_service import (
+    LEVELS, level_for_xp, next_level, MEASUREMENT_FIELDS,
+    _normalize_weight_kg, _normalize_length_cm, to_display, award_xp,
+)
+
+
+class WeightEntry(BaseModel):
+    weight: float
+    unit: str = "metric"
+    note: Optional[str] = None
+    logged_at: Optional[str] = None
+
+
+class MeasurementEntry(BaseModel):
+    unit: str = "metric"
+    values: Dict[str, float] = {}  # keys from MEASUREMENT_FIELDS
+    note: Optional[str] = None
+    logged_at: Optional[str] = None
+
+
+class StrengthEntry(BaseModel):
+    exercise: str
+    weight: float
+    reps: int
+    unit: str = "metric"
+    logged_at: Optional[str] = None
+
+
+class PhotoEntry(BaseModel):
+    # base64 data URL, e.g. "data:image/jpeg;base64,xxxx"
+    image: str
+    pose: str = "front"  # front|side|back
+    caption: Optional[str] = None
+
+
+class UserPrefs(BaseModel):
+    units: Optional[str] = None   # metric | imperial
+    starting_level: Optional[int] = None  # 1..8
+
+
+@api_router.get("/me/prefs")
+async def get_prefs(user: dict = Depends(get_current_user)):
+    prefs = await db.user_prefs.find_one({"user_id": user["id"]}, {"_id": 0}) or {}
+    return {"units": prefs.get("units", "metric"),
+            "starting_level": prefs.get("starting_level", 1)}
+
+
+@api_router.patch("/me/prefs")
+async def set_prefs(req: UserPrefs, user: dict = Depends(get_current_user)):
+    updates = {k: v for k, v in req.dict().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    if "units" in updates and updates["units"] not in {"metric", "imperial"}:
+        raise HTTPException(status_code=400, detail="units must be metric or imperial")
+    if "starting_level" in updates:
+        lv = int(updates["starting_level"])
+        if lv < 1 or lv > len(LEVELS):
+            raise HTTPException(status_code=400, detail="starting_level out of range")
+        # Also seed user_levels doc so they begin at that level's min_xp
+        target = next(l for l in LEVELS if l["id"] == lv)
+        await db.user_levels.update_one(
+            {"user_id": user["id"]},
+            {"$setOnInsert": {"user_id": user["id"], "created_at":
+                              datetime.now(timezone.utc).isoformat(),
+                              "events": 0},
+             "$max": {"xp": target["min_xp"]},
+             "$set": {"starting_level": lv}},
+            upsert=True,
+        )
+    await db.user_prefs.update_one(
+        {"user_id": user["id"]}, {"$set": updates}, upsert=True,
+    )
+    return {"ok": True, **updates}
+
+
+@api_router.get("/levels")
+async def list_levels():
+    return {"levels": LEVELS}
+
+
+@api_router.get("/me/level")
+async def my_level(user: dict = Depends(get_current_user)):
+    doc = await db.user_levels.find_one({"user_id": user["id"]}, {"_id": 0}) or {}
+    xp = int(doc.get("xp", 0) or 0)
+    lv = level_for_xp(xp)
+    nxt = next_level(lv)
+    progress_pct = 100 if not nxt else int(100 * (xp - lv["min_xp"]) /
+                                           max(1, nxt["min_xp"] - lv["min_xp"]))
+    return {"xp": xp, "level": lv, "next_level": nxt,
+            "progress_pct": progress_pct,
+            "starting_level": doc.get("starting_level", 1)}
+
+
+# ---------- Weight ----------
+@api_router.post("/progress/weight")
+async def log_weight(req: WeightEntry, user: dict = Depends(get_current_user)):
+    kg = _normalize_weight_kg(req.weight, req.unit)
+    now = req.logged_at or datetime.now(timezone.utc).isoformat()
+    entry = {"id": str(uuid.uuid4()), "user_id": user["id"], "weight_kg": kg,
+             "note": req.note, "logged_at": now,
+             "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.weight_entries.insert_one(entry)
+    xp = await award_xp(db, user["id"], "measurement_logged")
+    entry.pop("_id", None)
+    return {"entry": entry, "xp": xp}
+
+
+@api_router.get("/progress/weight")
+async def list_weight(user: dict = Depends(get_current_user)):
+    prefs = await db.user_prefs.find_one({"user_id": user["id"]}) or {}
+    unit = prefs.get("units", "metric")
+    entries = await db.weight_entries.find(
+        {"user_id": user["id"]}, {"_id": 0}).sort("logged_at", -1).to_list(500)
+    for e in entries:
+        e["weight_display"] = to_display(e.get("weight_kg"), None, unit).get("weight")
+    return {"entries": entries, "unit": unit}
+
+
+# ---------- Measurements ----------
+@api_router.post("/progress/measurements")
+async def log_measurements(req: MeasurementEntry, user: dict = Depends(get_current_user)):
+    cm_values = {k: _normalize_length_cm(v, req.unit) for k, v in req.values.items()
+                 if k in MEASUREMENT_FIELDS and v is not None}
+    if not cm_values:
+        raise HTTPException(status_code=400, detail="Provide at least one measurement")
+    now = req.logged_at or datetime.now(timezone.utc).isoformat()
+    entry = {"id": str(uuid.uuid4()), "user_id": user["id"], "values_cm": cm_values,
+             "note": req.note, "logged_at": now,
+             "created_at": datetime.now(timezone.utc).isoformat()}
+    await db.measurement_entries.insert_one(entry)
+    xp = await award_xp(db, user["id"], "measurement_logged")
+    entry.pop("_id", None)
+    return {"entry": entry, "xp": xp}
+
+
+@api_router.get("/progress/measurements")
+async def list_measurements(user: dict = Depends(get_current_user)):
+    prefs = await db.user_prefs.find_one({"user_id": user["id"]}) or {}
+    unit = prefs.get("units", "metric")
+    entries = await db.measurement_entries.find(
+        {"user_id": user["id"]}, {"_id": 0}).sort("logged_at", -1).to_list(500)
+    for e in entries:
+        e["values_display"] = to_display(None, e.get("values_cm"), unit)
+    return {"entries": entries, "unit": unit, "fields": MEASUREMENT_FIELDS}
+
+
+# ---------- Photos ----------
+@api_router.post("/progress/photos")
+async def upload_photo(req: PhotoEntry, user: dict = Depends(get_current_user)):
+    if req.pose not in {"front", "side", "back"}:
+        raise HTTPException(status_code=400, detail="Invalid pose")
+    if not req.image.startswith("data:image"):
+        raise HTTPException(status_code=400, detail="Expected base64 data URL")
+    now = datetime.now(timezone.utc).isoformat()
+    entry = {"id": str(uuid.uuid4()), "user_id": user["id"],
+             "image": req.image, "pose": req.pose,
+             "caption": req.caption, "logged_at": now, "created_at": now}
+    await db.progress_photos.insert_one(entry)
+    xp = await award_xp(db, user["id"], "photo_uploaded")
+    entry.pop("_id", None)
+    return {"entry": entry, "xp": xp}
+
+
+@api_router.get("/progress/photos")
+async def list_photos(user: dict = Depends(get_current_user),
+                       pose: Optional[str] = None):
+    q: dict = {"user_id": user["id"]}
+    if pose:
+        q["pose"] = pose
+    entries = await db.progress_photos.find(q, {"_id": 0}).sort("logged_at", -1).to_list(200)
+    return {"photos": entries}
+
+
+@api_router.delete("/progress/photos/{photo_id}")
+async def delete_photo(photo_id: str, user: dict = Depends(get_current_user)):
+    res = await db.progress_photos.delete_one({"id": photo_id, "user_id": user["id"]})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    return {"deleted": True}
+
+
+# ---------- Strength PRs ----------
+@api_router.post("/progress/strength")
+async def log_strength(req: StrengthEntry, user: dict = Depends(get_current_user)):
+    kg = _normalize_weight_kg(req.weight, req.unit)
+    now = req.logged_at or datetime.now(timezone.utc).isoformat()
+    # Is this a PR for this exercise?
+    prev = await db.strength_entries.find_one(
+        {"user_id": user["id"], "exercise": req.exercise.strip().lower()},
+        sort=[("weight_kg", -1)])
+    is_pr = not prev or kg > float(prev.get("weight_kg", 0))
+    entry = {"id": str(uuid.uuid4()), "user_id": user["id"],
+             "exercise": req.exercise.strip().lower(),
+             "weight_kg": kg, "reps": req.reps, "is_pr": is_pr,
+             "logged_at": now, "created_at": now}
+    await db.strength_entries.insert_one(entry)
+    xp = await award_xp(db, user["id"], "strength_pr" if is_pr else "measurement_logged")
+    entry.pop("_id", None)
+    return {"entry": entry, "xp": xp, "is_pr": is_pr}
+
+
+@api_router.get("/progress/strength")
+async def list_strength(user: dict = Depends(get_current_user)):
+    prefs = await db.user_prefs.find_one({"user_id": user["id"]}) or {}
+    unit = prefs.get("units", "metric")
+    entries = await db.strength_entries.find(
+        {"user_id": user["id"]}, {"_id": 0}).sort("logged_at", -1).to_list(500)
+    from progress_service import kg_to_lb
+    for e in entries:
+        e["weight_display"] = kg_to_lb(e["weight_kg"]) if unit == "imperial" else round(e["weight_kg"], 1)
+    # Current PRs per exercise
+    prs: dict = {}
+    for e in entries:
+        key = e["exercise"]
+        if key not in prs or e["weight_kg"] > prs[key]["weight_kg"]:
+            prs[key] = e
+    return {"entries": entries, "prs": list(prs.values()), "unit": unit}
+
+
+# ---------- Summary + insights ----------
+@api_router.get("/progress/summary")
+async def progress_summary(user: dict = Depends(get_current_user)):
+    prefs = await db.user_prefs.find_one({"user_id": user["id"]}) or {}
+    unit = prefs.get("units", "metric")
+
+    weights = await db.weight_entries.find(
+        {"user_id": user["id"]}, {"_id": 0}).sort("logged_at", 1).to_list(500)
+    measurements = await db.measurement_entries.find(
+        {"user_id": user["id"]}, {"_id": 0}).sort("logged_at", 1).to_list(500)
+
+    insight = None
+    if len(weights) >= 2:
+        first = weights[0]; last = weights[-1]
+        delta_kg = round(last["weight_kg"] - first["weight_kg"], 2)
+        days = max(1, (datetime.fromisoformat(last["logged_at"]) -
+                       datetime.fromisoformat(first["logged_at"])).days)
+        sign = "+" if delta_kg >= 0 else ""
+        if unit == "imperial":
+            from progress_service import kg_to_lb
+            delta_disp = f"{sign}{kg_to_lb(delta_kg):.1f} lb"
+        else:
+            delta_disp = f"{sign}{delta_kg:.2f} kg"
+        insight = f"{delta_disp} over {days} day{'s' if days != 1 else ''}"
+
+    photos_count = await db.progress_photos.count_documents({"user_id": user["id"]})
+    strength_count = await db.strength_entries.count_documents({"user_id": user["id"]})
+
+    return {
+        "weight_count": len(weights),
+        "measurement_count": len(measurements),
+        "photo_count": photos_count,
+        "strength_count": strength_count,
+        "insight": insight,
+        "unit": unit,
+    }
+
+
+# ---------- Share card ----------
+@api_router.get("/progress/share-card/{days}")
+async def share_card(days: int, user: dict = Depends(get_current_user)):
+    if days not in {30, 60, 90}:
+        raise HTTPException(status_code=400, detail="days must be 30, 60 or 90")
+    cutoff = datetime.now(timezone.utc).isoformat()
+    from datetime import timedelta
+    start = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    # Pull photos in range
+    start_photos = await db.progress_photos.find(
+        {"user_id": user["id"], "logged_at": {"$lte": start}},
+        {"_id": 0}).sort("logged_at", -1).to_list(10)
+    recent_photos = await db.progress_photos.find(
+        {"user_id": user["id"], "logged_at": {"$gte": start}},
+        {"_id": 0}).sort("logged_at", -1).to_list(10)
+    # Fallbacks if not enough photos
+    if not start_photos:
+        earliest = await db.progress_photos.find(
+            {"user_id": user["id"]}, {"_id": 0}).sort("logged_at", 1).to_list(3)
+        start_photos = earliest
+    if not recent_photos:
+        recent_photos = await db.progress_photos.find(
+            {"user_id": user["id"]}, {"_id": 0}).sort("logged_at", -1).to_list(3)
+
+    # Stats
+    weight_before = await db.weight_entries.find_one(
+        {"user_id": user["id"], "logged_at": {"$lte": start}},
+        {"_id": 0}, sort=[("logged_at", -1)])
+    weight_now = await db.weight_entries.find_one(
+        {"user_id": user["id"]},
+        {"_id": 0}, sort=[("logged_at", -1)])
+    prefs = await db.user_prefs.find_one({"user_id": user["id"]}) or {}
+    unit = prefs.get("units", "metric")
+    return {
+        "days": days,
+        "unit": unit,
+        "name": user.get("name", "FitLux Athlete"),
+        "photos_before": start_photos,
+        "photos_after": recent_photos,
+        "weight_before": weight_before,
+        "weight_after": weight_now,
+        "ready": bool(start_photos and recent_photos),
+    }
+
+
 @api_router.get("/admin/email-log")
 async def admin_email_log(user: dict = Depends(require_admin)):
     log = await db.email_log.find({}, {"_id": 0}).sort("sent_at", -1).limit(500).to_list(500)

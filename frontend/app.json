@@ -16,7 +16,7 @@
       "buildNumber": "1",
       "infoPlist": {
         "NSCameraUsageDescription": "Used to scan progress photos.",
-        "NSPhotoLibraryUsageDescription": "Pick progress photos from your library.",
+        "NSPhotoLibraryUsageDescription": "Upload progress photos to track gains.",
         "NSUserTrackingUsageDescription": "Used to personalise your fitness plan and improve the app.",
         "ITSAppUsesNonExemptEncryption": false
       }

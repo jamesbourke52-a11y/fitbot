@@ -10,6 +10,7 @@ import {
 } from "lucide-react-native";
 import { useAuth, api } from "../../src/auth";
 import { colors } from "../../src/theme";
+import { useRouter } from "expo-router";
 
 type Reminder = { id: string; label: string; time: string; icon: string };
 type Today = {
@@ -37,6 +38,7 @@ const validTime = (t: string) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t);
 
 export default function Home() {
   const { token, user } = useAuth();
+  const router = useRouter();
   const [today, setToday] = useState<Today | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -162,12 +164,15 @@ export default function Home() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
       >
         <View style={s.header}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={s.hello}>Welcome back</Text>
             <Text style={s.name} testID="home-name">{user?.name}</Text>
           </View>
           <TouchableOpacity testID="home-reset" onPress={reset} style={s.resetBtn}>
             <RotateCcw color={colors.textMuted} size={18} />
+          </TouchableOpacity>
+          <TouchableOpacity testID="home-profile" onPress={() => router.push("/profile")} style={s.avatar}>
+            <Text style={s.avatarText}>{(user?.name || "?")[0].toUpperCase()}</Text>
           </TouchableOpacity>
         </View>
 
@@ -375,6 +380,8 @@ const s = StyleSheet.create({
   hello: { color: colors.textMuted, fontSize: 13, letterSpacing: 1 },
   name: { color: colors.text, fontSize: 26, fontWeight: "800", marginTop: 2 },
   resetBtn: { padding: 12, borderRadius: 12, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+  avatar: { marginLeft: 10, width: 42, height: 42, borderRadius: 21, backgroundColor: colors.primaryGlow, borderColor: colors.primary, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  avatarText: { color: colors.primary, fontSize: 16, fontWeight: "900" },
   workoutCard: { height: 160, borderRadius: 24, overflow: "hidden", backgroundColor: colors.surface, marginBottom: 20 },
   workoutOverlay: { flex: 1, padding: 20, justifyContent: "flex-end", backgroundColor: "rgba(0,0,0,0.45)", borderRadius: 24 },
   workoutKicker: { color: colors.primary, fontSize: 11, letterSpacing: 3, fontWeight: "800" },
