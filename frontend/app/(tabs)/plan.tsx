@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, ActivityIndicator, RefreshControl,
-  TouchableOpacity, Image, Pressable, Linking,
+  TouchableOpacity, Image, Pressable, Linking, Modal, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Sparkles, Flame, Droplet, Play, ChevronDown, ChevronUp, ExternalLink } from "lucide-react-native";
+import { Sparkles, Flame, Droplet, Play, ChevronDown, ChevronUp, ExternalLink, Dumbbell, Zap, X, Check } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useAuth, api } from "../../src/auth";
 import { colors } from "../../src/theme";
@@ -81,11 +81,19 @@ export default function PlanScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr] = useState("");
   const [tab, setTab] = useState<"workouts" | "overview">("workouts");
+  const [prescription, setPrescription] = useState<any>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [activeSession, setActiveSession] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const data = await api(token, "/api/plan");
-      setPlan(data); setErr("");
+      const [pl, pr] = await Promise.all([
+        api(token, "/api/plan"),
+        api(token, "/api/workouts/prescription").catch(() => null),
+      ]);
+      setPlan(pl);
+      setPrescription(pr);
+      setErr("");
     } catch (e: any) {
       setErr(e.message);
     } finally {
@@ -124,6 +132,53 @@ export default function PlanScreen() {
         <Text style={s.subtitle}>
           {(plan.quiz.workout_style || "gym").toUpperCase()} · {plan.quiz.workout_days_per_week} days / week
         </Text>
+
+        {prescription && (
+          <View style={s.rxCard}>
+            <View style={s.rxHead}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.rxKicker}>TODAY'S PRESCRIPTION · {prescription.level.emoji} {prescription.level.name.toUpperCase()}</Text>
+                <Text style={s.rxTitle}>Lift {prescription.prescription.sets} sets of…</Text>
+              </View>
+              <View style={s.rxAdj}>
+                <Zap color={colors.primary} size={12} />
+                <Text style={s.rxAdjText}>×{prescription.prescription.adjustment_factor}</Text>
+              </View>
+            </View>
+            {prescription.prescription.key_lifts.map((l: any) => (
+              <View key={l.id} style={s.rxRow}>
+                <Dumbbell color={colors.primary} size={16} />
+                <Text style={s.rxLiftName}>{l.name}</Text>
+                <Text style={s.rxLiftVal}>{l.weight_display} {l.weight_unit} × {l.reps}</Text>
+              </View>
+            ))}
+            {prescription.prescription.accessories.map((a: any) => (
+              <View key={a.id} style={s.rxRow}>
+                <View style={{ width: 16, height: 16, borderRadius: 8, borderColor: colors.border, borderWidth: 1 }} />
+                <Text style={s.rxLiftName}>{a.name}</Text>
+                <Text style={s.rxLiftVal}>× {a.reps}</Text>
+              </View>
+            ))}
+            <TouchableOpacity
+              testID="start-workout-btn"
+              style={s.rxStartBtn}
+              onPress={async () => {
+                try {
+                  const r = await api(token, "/api/workouts/start", { method: "POST" });
+                  setActiveSession(r.session_id);
+                  setShowFeedback(true);
+                } catch (e: any) { Alert.alert("Couldn't start", e.message); }
+              }}
+            >
+              <Text style={s.rxStartText}>
+                {prescription.awaiting_feedback ? "Finish & rate this workout" : "Start workout"}
+              </Text>
+            </TouchableOpacity>
+            <Text style={s.rxFoot}>
+              Weights auto-tune based on your last feedback. Too hard → we drop 5%. Too easy → we bump 5%.
+            </Text>
+          </View>
+        )}
 
         <View style={s.metrics}>
           <View style={s.metric}>
@@ -171,7 +226,92 @@ export default function PlanScreen() {
           <Text style={s.outlineText}>Retake quiz & regenerate</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      <FeedbackModal
+        visible={showFeedback}
+        token={token}
+        sessionId={activeSession || prescription?.current_session_id}
+        onClose={() => setShowFeedback(false)}
+        onDone={async (res: any) => {
+          setShowFeedback(false);
+          if (res?.message) Alert.alert("Workout logged", `${res.message}\n+${res?.xp?.xp_delta || 0} XP`);
+          const pr = await api(token, "/api/workouts/prescription").catch(() => null);
+          setPrescription(pr);
+          setActiveSession(null);
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+function FeedbackModal({ visible, token, sessionId, onClose, onDone }: any) {
+  const [w, setW] = useState<string>("");
+  const [r, setR] = useState<string>("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (!visible) { setW(""); setR(""); } }, [visible]);
+
+  const submit = async () => {
+    if (!w || !r || !sessionId) return;
+    setSaving(true);
+    try {
+      const res = await api(token, "/api/workouts/feedback", {
+        method: "POST",
+        body: JSON.stringify({ workout_id: sessionId, weight_feedback: w, reps_feedback: r }),
+      });
+      onDone(res);
+    } catch (e: any) { Alert.alert("Save failed", e.message); }
+    setSaving(false);
+  };
+
+  const choice = (val: string, cur: string, setCur: (v: string) => void, labels: any) => (
+    <View style={{ flexDirection: "row", gap: 8 }}>
+      {["too_easy", "just_right", "too_hard"].map((c) => (
+        <TouchableOpacity
+          key={c}
+          testID={`fb-${labels.prefix}-${c}`}
+          style={[s.fbBtn, cur === c && s.fbBtnActive]}
+          onPress={() => setCur(c)}
+        >
+          <Text style={[s.fbBtnText, cur === c && s.fbBtnTextActive]}>
+            {c === "too_easy" ? "Too easy" : c === "just_right" ? "Just right" : "Too hard"}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={s.modalBg}>
+        <View style={s.modalCard}>
+          <View style={s.modalHead}>
+            <View>
+              <Text style={s.modalKicker}>HOW WAS YOUR WORKOUT?</Text>
+              <Text style={s.modalTitle}>Rate today's session</Text>
+            </View>
+            <TouchableOpacity onPress={onClose}><X color={colors.textMuted} size={22} /></TouchableOpacity>
+          </View>
+
+          <Text style={s.fbLabel}>WEIGHT</Text>
+          {choice("w", w, setW, { prefix: "w" })}
+
+          <Text style={[s.fbLabel, { marginTop: 16 }]}>REPS</Text>
+          {choice("r", r, setR, { prefix: "r" })}
+
+          <Text style={s.fbHint}>Next workout auto-tunes based on your answer (±5% per axis).</Text>
+          <TouchableOpacity
+            testID="submit-feedback"
+            style={[s.submitBtn, (!w || !r) && s.submitBtnDisabled]}
+            onPress={submit}
+            disabled={!w || !r || saving}
+          >
+            {saving ? <ActivityIndicator color="#000" /> :
+              <><Check color="#000" size={18} /><Text style={s.submitBtnText}>Save & finish</Text></>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -203,6 +343,32 @@ const s = StyleSheet.create({
   exPlayOverlay: { position: "absolute", right: 6, bottom: 6, width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
   exHeadRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   exName: { color: colors.text, fontWeight: "700", fontSize: 14, flex: 1, marginRight: 6 },
+  rxCard: { backgroundColor: colors.surface, padding: 16, borderRadius: 20, borderColor: colors.primary, borderWidth: 1, marginBottom: 20 },
+  rxHead: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  rxKicker: { color: colors.primary, fontSize: 10, letterSpacing: 2, fontWeight: "800" },
+  rxTitle: { color: colors.text, fontSize: 18, fontWeight: "900", marginTop: 4 },
+  rxAdj: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primaryGlow, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, borderColor: colors.primary, borderWidth: 1 },
+  rxAdjText: { color: colors.primary, fontWeight: "900", fontSize: 12 },
+  rxRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8, borderBottomColor: colors.border, borderBottomWidth: 1 },
+  rxLiftName: { color: colors.text, flex: 1, fontSize: 14 },
+  rxLiftVal: { color: colors.primary, fontWeight: "900", fontSize: 14 },
+  rxStartBtn: { backgroundColor: colors.primary, padding: 14, borderRadius: 12, marginTop: 12, alignItems: "center" },
+  rxStartText: { color: "#000", fontWeight: "900", fontSize: 15 },
+  rxFoot: { color: colors.textDim, fontSize: 11, marginTop: 10, textAlign: "center", fontStyle: "italic", lineHeight: 15 },
+  modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
+  modalCard: { backgroundColor: colors.surfaceElevated, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderColor: colors.border, borderWidth: 1 },
+  modalHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 },
+  modalKicker: { color: colors.primary, fontSize: 11, letterSpacing: 2, fontWeight: "800" },
+  modalTitle: { color: colors.text, fontSize: 20, fontWeight: "900", marginTop: 2 },
+  fbLabel: { color: colors.textDim, fontSize: 11, letterSpacing: 2, fontWeight: "800", marginBottom: 8 },
+  fbBtn: { flex: 1, padding: 14, borderRadius: 12, backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, alignItems: "center" },
+  fbBtnActive: { backgroundColor: colors.primaryGlow, borderColor: colors.primary },
+  fbBtnText: { color: colors.textMuted, fontWeight: "700", fontSize: 12 },
+  fbBtnTextActive: { color: colors.primary },
+  fbHint: { color: colors.textDim, fontSize: 12, marginTop: 14, textAlign: "center" },
+  submitBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: colors.primary, padding: 14, borderRadius: 12, marginTop: 14 },
+  submitBtnDisabled: { opacity: 0.4 },
+  submitBtnText: { color: "#000", fontWeight: "900", fontSize: 15 },
   exSets: { color: colors.primary, fontSize: 12, marginTop: 2, fontWeight: "700", letterSpacing: 0.5 },
   exTip: { color: colors.textMuted, fontSize: 11, marginTop: 4, lineHeight: 15 },
   planBox: { backgroundColor: colors.surface, padding: 20, borderRadius: 20, borderColor: colors.border, borderWidth: 1 },

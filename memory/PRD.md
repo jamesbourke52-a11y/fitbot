@@ -33,6 +33,9 @@ Additional admin emails auto-promoted from ADMIN_EMAILS env (currently jamesbour
 In-app Admin Dashboard at /admin: metrics · promo code CRUD · influencer payouts · earnings feed.
 
 ## Progress tracking + gamification (v1.1)
+- **Adaptive workout prescription**: Each of the 8 levels has preset % of bodyweight × reps × sets for 4 key lifts (bench, squat, deadlift, OHP) plus 3 accessories. Example — Rookie at 80 kg: Bench 32.5kg × 8 × 3 sets; EXTREME at 80 kg: Bench 120kg × 2 × 6 sets. Weights round to 2.5 kg (metric) / 5 lb (imperial).
+- **Feedback loop**: `POST /api/workouts/start` → session begins → `POST /api/workouts/feedback` accepts two 3-choice axes (weight: too_easy/just_right/too_hard AND reps: same). Each axis ±5% adjusts the user's `adjust` factor (bounded 0.7–1.5). Next prescription auto-scales weights ± and reps ∓ inversely (easier = more reps, harder = fewer).
+- **Plan tab** shows today's prescribed workout card (gold border, lists each lift with weight × reps). "Start workout" button → opens 3-button feedback modal on finish. Completing workout earns +25 XP.
 - **Experience assessment quiz** (5 questions: training history, weekly frequency, pull-ups, bench press, recovery). Maps a total score 0-20 to a recommended rank (Rookie → Legend — EXTREME must still be earned through XP). Accessible from `/level-up` via the gold "Not sure? Take the assessment" button, opens as a bottom-sheet modal with progress bar + result card.
 - **Progress tab** (bottom nav slot #3): Overview · Body · Photos · Strength
 - **Body weight log**: metric/imperial toggle per user, trend chart (SVG), insight line

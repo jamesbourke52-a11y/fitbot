@@ -1122,7 +1122,7 @@ async def admin_metrics(user: dict = Depends(require_admin)):
 from progress_service import (
     LEVELS, level_for_xp, next_level, MEASUREMENT_FIELDS,
     _normalize_weight_kg, _normalize_length_cm, to_display, award_xp,
-    LEVEL_QUIZ, assess_level_id,
+    LEVEL_QUIZ, assess_level_id, build_prescription, LEVEL_PROGRAMMING,
 )
 
 
@@ -1438,6 +1438,90 @@ async def progress_summary(user: dict = Depends(get_current_user)):
 
 
 # ---------- Share card ----------
+class WorkoutFeedbackSubmit(BaseModel):
+    workout_id: str
+    weight_feedback: str  # too_easy | just_right | too_hard
+    reps_feedback: str    # too_easy | just_right | too_hard
+    note: Optional[str] = None
+
+
+@api_router.get("/workouts/prescription")
+async def workout_prescription(user: dict = Depends(get_current_user)):
+    prefs = await db.user_prefs.find_one({"user_id": user["id"]}) or {}
+    unit = prefs.get("units", "metric")
+    lvl_doc = await db.user_levels.find_one({"user_id": user["id"]}) or {}
+    lv = level_for_xp(int(lvl_doc.get("xp", 0)))
+    last_w = await db.weight_entries.find_one(
+        {"user_id": user["id"]}, sort=[("logged_at", -1)])
+    bodyweight_kg = float(last_w["weight_kg"]) if last_w else 75.0
+    state = await db.training_state.find_one({"user_id": user["id"]}) or {}
+    adj = float(state.get("adjust", 1.0))
+    prescription = build_prescription(lv["id"], bodyweight_kg, adj, unit)
+    return {"level": lv, "bodyweight_kg": bodyweight_kg, "unit": unit,
+            "prescription": prescription,
+            "awaiting_feedback": bool(state.get("awaiting_feedback")),
+            "current_session_id": state.get("current_session_id")}
+
+
+@api_router.post("/workouts/start")
+async def workout_start(user: dict = Depends(get_current_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    session_id = str(uuid.uuid4())
+    await db.workout_sessions.insert_one({
+        "id": session_id, "user_id": user["id"],
+        "started_at": now, "completed": False,
+    })
+    await db.training_state.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"awaiting_feedback": True,
+                  "current_session_id": session_id},
+         "$setOnInsert": {"adjust": 1.0, "user_id": user["id"]}},
+        upsert=True,
+    )
+    return {"session_id": session_id}
+
+
+def _feedback_delta(v: str) -> float:
+    return -0.05 if v == "too_hard" else (0.05 if v == "too_easy" else 0.0)
+
+
+def _feedback_copy(delta: float) -> str:
+    if delta <= -0.05:
+        return "Dialling weight & reps down for next session — stay consistent!"
+    if delta >= 0.05:
+        return "You're ready for more — next session bumps up ~5%."
+    return "Nailing the sweet spot. Same targets next time."
+
+
+@api_router.post("/workouts/feedback")
+async def workout_feedback(req: WorkoutFeedbackSubmit,
+                            user: dict = Depends(get_current_user)):
+    now = datetime.now(timezone.utc).isoformat()
+    valid = {"too_easy", "just_right", "too_hard"}
+    if req.weight_feedback not in valid or req.reps_feedback not in valid:
+        raise HTTPException(status_code=400, detail="Invalid feedback value")
+    delta = _feedback_delta(req.weight_feedback) + _feedback_delta(req.reps_feedback)
+    state = await db.training_state.find_one({"user_id": user["id"]}) or {}
+    current_adj = float(state.get("adjust", 1.0))
+    new_adj = round(max(0.7, min(1.5, current_adj + delta)), 3)
+    await db.workout_sessions.update_one(
+        {"id": req.workout_id, "user_id": user["id"]},
+        {"$set": {"completed": True, "completed_at": now,
+                  "feedback": req.dict(),
+                  "adjust_before": current_adj, "adjust_after": new_adj}},
+    )
+    await db.training_state.update_one(
+        {"user_id": user["id"]},
+        {"$set": {"adjust": new_adj, "awaiting_feedback": False,
+                  "current_session_id": None, "updated_at": now}},
+        upsert=True,
+    )
+    xp = await award_xp(db, user["id"], "workout_completed")
+    return {"adjust": new_adj, "delta": round(delta, 3), "xp": xp,
+            "message": _feedback_copy(delta)}
+
+
+
 @api_router.get("/progress/share-card/{days}")
 async def share_card(days: int, user: dict = Depends(get_current_user)):
     if days not in {30, 60, 90}:

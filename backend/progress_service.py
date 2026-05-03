@@ -43,6 +43,130 @@ def level_for_xp(xp: int) -> dict:
     return current
 
 
+# ---------------- Level-specific prescribed training ----------------
+# Key lifts: % of bodyweight × reps (per working set). Accessories use fixed reps.
+# "sets" applies to all exercises at that level.
+LEVEL_PROGRAMMING = {
+    1: {  # Rookie
+        "sets": 3,
+        "key_lifts": [
+            {"id": "bench",    "name": "Bench press",      "bw_pct": 40, "reps": 8},
+            {"id": "squat",    "name": "Back squat",       "bw_pct": 50, "reps": 10},
+            {"id": "deadlift", "name": "Deadlift",         "bw_pct": 60, "reps": 8},
+            {"id": "ohp",      "name": "Overhead press",   "bw_pct": 30, "reps": 8},
+        ],
+        "accessories": [
+            {"id": "pushup",   "name": "Push-ups",         "reps": 8},
+            {"id": "row",      "name": "Seated row",       "reps": 10},
+            {"id": "plank_s",  "name": "Plank (seconds)",  "reps": 20},
+        ],
+    },
+    2: {"sets": 3, "key_lifts": [
+        {"id": "bench",    "name": "Bench press",      "bw_pct": 55, "reps": 8},
+        {"id": "squat",    "name": "Back squat",       "bw_pct": 70, "reps": 10},
+        {"id": "deadlift", "name": "Deadlift",         "bw_pct": 80, "reps": 8},
+        {"id": "ohp",      "name": "Overhead press",   "bw_pct": 40, "reps": 8},
+    ], "accessories": [
+        {"id": "pullup",   "name": "Pull-ups",         "reps": 5},
+        {"id": "dip",      "name": "Dips",             "reps": 8},
+        {"id": "plank_s",  "name": "Plank (seconds)",  "reps": 40},
+    ]},
+    3: {"sets": 4, "key_lifts": [
+        {"id": "bench",    "name": "Bench press",      "bw_pct": 70, "reps": 6},
+        {"id": "squat",    "name": "Back squat",       "bw_pct": 90, "reps": 8},
+        {"id": "deadlift", "name": "Deadlift",         "bw_pct": 100, "reps": 6},
+        {"id": "ohp",      "name": "Overhead press",   "bw_pct": 50, "reps": 6},
+    ], "accessories": [
+        {"id": "pullup",   "name": "Pull-ups",         "reps": 8},
+        {"id": "dip",      "name": "Dips",             "reps": 12},
+        {"id": "chinup",   "name": "Chin-ups",         "reps": 8},
+    ]},
+    4: {"sets": 4, "key_lifts": [
+        {"id": "bench",    "name": "Bench press",      "bw_pct": 85, "reps": 5},
+        {"id": "squat",    "name": "Back squat",       "bw_pct": 110, "reps": 6},
+        {"id": "deadlift", "name": "Deadlift",         "bw_pct": 130, "reps": 5},
+        {"id": "ohp",      "name": "Overhead press",   "bw_pct": 60, "reps": 6},
+    ], "accessories": [
+        {"id": "pullup",   "name": "Weighted pull-ups","reps": 6},
+        {"id": "dip",      "name": "Weighted dips",    "reps": 8},
+        {"id": "muscleup", "name": "Muscle-ups",       "reps": 3},
+    ]},
+    5: {"sets": 5, "key_lifts": [
+        {"id": "bench",    "name": "Bench press",      "bw_pct": 100, "reps": 5},
+        {"id": "squat",    "name": "Back squat",       "bw_pct": 130, "reps": 5},
+        {"id": "deadlift", "name": "Deadlift",         "bw_pct": 150, "reps": 5},
+        {"id": "ohp",      "name": "Overhead press",   "bw_pct": 70, "reps": 5},
+    ], "accessories": [
+        {"id": "pullup",   "name": "Weighted pull-ups","reps": 8},
+        {"id": "dip",      "name": "Weighted dips",    "reps": 10},
+        {"id": "muscleup", "name": "Muscle-ups",       "reps": 5},
+    ]},
+    6: {"sets": 5, "key_lifts": [
+        {"id": "bench",    "name": "Bench press",      "bw_pct": 115, "reps": 4},
+        {"id": "squat",    "name": "Back squat",       "bw_pct": 150, "reps": 4},
+        {"id": "deadlift", "name": "Deadlift",         "bw_pct": 175, "reps": 4},
+        {"id": "ohp",      "name": "Overhead press",   "bw_pct": 80, "reps": 5},
+    ], "accessories": [
+        {"id": "pullup",   "name": "Weighted pull-ups","reps": 10},
+        {"id": "dip",      "name": "Weighted dips",    "reps": 12},
+        {"id": "hspu",     "name": "Handstand push-ups","reps": 5},
+    ]},
+    7: {"sets": 6, "key_lifts": [
+        {"id": "bench",    "name": "Bench press",      "bw_pct": 130, "reps": 3},
+        {"id": "squat",    "name": "Back squat",       "bw_pct": 170, "reps": 3},
+        {"id": "deadlift", "name": "Deadlift",         "bw_pct": 200, "reps": 3},
+        {"id": "ohp",      "name": "Overhead press",   "bw_pct": 95, "reps": 4},
+    ], "accessories": [
+        {"id": "pullup",   "name": "Weighted pull-ups","reps": 12},
+        {"id": "olc",      "name": "One-arm chin-up",  "reps": 1},
+        {"id": "hspu",     "name": "Handstand push-ups","reps": 8},
+    ]},
+    8: {"sets": 6, "key_lifts": [
+        {"id": "bench",    "name": "Bench press",      "bw_pct": 150, "reps": 2},
+        {"id": "squat",    "name": "Back squat",       "bw_pct": 200, "reps": 2},
+        {"id": "deadlift", "name": "Deadlift",         "bw_pct": 225, "reps": 2},
+        {"id": "ohp",      "name": "Overhead press",   "bw_pct": 110, "reps": 3},
+    ], "accessories": [
+        {"id": "pullup",   "name": "Weighted pull-ups","reps": 15},
+        {"id": "olc",      "name": "One-arm chin-up",  "reps": 3},
+        {"id": "hspu",     "name": "Strict HSPU",      "reps": 10},
+    ]},
+}
+
+
+def build_prescription(level_id: int, bodyweight_kg: float, adjust: float = 1.0, unit: str = "metric") -> dict:
+    """Return the prescribed weights/reps for a user at a given level + adjust factor."""
+    prog = LEVEL_PROGRAMMING.get(level_id, LEVEL_PROGRAMMING[1])
+    factor = max(0.6, min(1.6, adjust))
+    key_lifts = []
+    for lift in prog["key_lifts"]:
+        kg = bodyweight_kg * (lift["bw_pct"] / 100.0) * factor
+        weight_display = round(kg * 2.2046226, 1) if unit == "imperial" else round(kg, 1)
+        # Round to nearest 2.5kg / 5lb for realistic plate loading
+        step = 5.0 if unit == "imperial" else 2.5
+        weight_display = round(weight_display / step) * step
+        key_lifts.append({
+            "id": lift["id"], "name": lift["name"],
+            "sets": prog["sets"],
+            "reps": max(1, int(round(lift["reps"] * (2 - factor)))),  # easier → more reps, harder → fewer
+            "weight_display": weight_display,
+            "weight_unit": "lb" if unit == "imperial" else "kg",
+            "bw_pct": lift["bw_pct"],
+        })
+    accessories = [
+        {**a, "sets": prog["sets"],
+         "reps": max(1, int(round(a["reps"] * (2 - factor))))}
+        for a in prog["accessories"]
+    ]
+    return {
+        "level_id": level_id,
+        "sets": prog["sets"],
+        "key_lifts": key_lifts,
+        "accessories": accessories,
+        "adjustment_factor": round(factor, 3),
+    }
+
+
 def next_level(lv: dict) -> Optional[dict]:
     for i, x in enumerate(LEVELS):
         if x["id"] == lv["id"] and i + 1 < len(LEVELS):
