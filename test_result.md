@@ -571,6 +571,45 @@ agent_communication:
         (which adds `LEVEL_QUIZ, assess_level_id` to the progress_service
         import), all calls returned 200. No code changes were required from me.
 
+    -agent: "main"
+      message: |
+        Session 4 changes landed:
+          1) BUG FIX — /api/workouts/prescription now reads plan.quiz.workout_style
+             and passes it to build_prescription(). Calisthenics users no longer
+             get bench press / squat / deadlift.
+          2) NEW — GET /api/workouts/history?limit=10 returns recent completed
+             sessions with feedback hoisted.
+          3) NEW — GET /api/coach/briefing (AI greeting + walkthrough summary)
+             and POST /api/coach/walkthrough (conversational set-by-set guide).
+             Claude Sonnet 4.5 via EMERGENT_LLM_KEY. Both have fallback copy.
+          4) UI — New CoachBriefingCard component on Home tab with holographic
+             animated orb + typewriter effect for the greeting. Coach tab now
+             auto-fetches a briefing on first open, shows "LIVE" status pill,
+             a pulsing orb avatar, and quick-action pills (Walk me through,
+             Eat today, Motivate, Supplements). Plan tab shows last 10
+             sessions with feedback tags (TOO EASY / JUST RIGHT / TOO HARD).
+
+    -agent: "testing"
+      message: |
+        Session 4 endpoints verified — 49/49 assertions PASS.
+          - Workout prescription style bug fix: gym returns barbell lifts;
+            calisthenics returns zero barbell + every key_lift bodyweight:true;
+            home returns dumbbell moves with weight_display.
+          - /api/workouts/history empty → {sessions:[], total_completed:0};
+            after start+feedback returns session with weight_feedback,
+            reps_feedback, completed:true; ?limit=5 honoured; no-auth → 401.
+          - /api/coach/briefing (admin w/ plan) → full schema (greeting,
+            level, style, time_of_day, prescription_summary {sets,
+            key_lifts, accessories, adjustment_factor}, awaiting_feedback,
+            has_plan:true). Fresh user w/o plan → has_plan:false, greeting
+            still non-empty (fallback path), level defaults to Rookie.
+            no-auth → 401.
+          - /api/coach/walkthrough admin → 200 with reply + session_id
+            starting "coach-"; non-subscriber → 402; reply persisted to
+            /coach/history as assistant message.
+        Real Claude Sonnet 4.5 round-trips observed (~10–20s latency).
+        No 5xx, no blockers. Suite at /app/coach_test.py.
+
         Coverage:
           1) GET /api/level/quiz (no auth) → 200, exactly 5 questions with
              ids ["experience","frequency","pullups","bench","recovery"];

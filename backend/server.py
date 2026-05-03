@@ -615,9 +615,9 @@ async def get_today(user: dict = Depends(get_current_user)):
     return {
         "date": today_key(),
         "water_glasses": log.get("water_glasses", 0),
-        "water_target": plan["water_target_glasses"] if plan else 8,
+        "water_target": (plan or {}).get("water_target_glasses", 8),
         "calories_consumed": log.get("calories_consumed", 0),
-        "calorie_target": plan["calorie_target"] if plan else 2000,
+        "calorie_target": (plan or {}).get("calorie_target", 2000),
         "meals": log.get("meals", []),
         "reminders": reminders,
     }
