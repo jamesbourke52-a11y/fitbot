@@ -4,7 +4,7 @@ import {
   TouchableOpacity, Image, Pressable, Linking, Modal, Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Sparkles, Flame, Droplet, Play, ChevronDown, ChevronUp, ExternalLink, Dumbbell, Zap, X, Check } from "lucide-react-native";
+import { Sparkles, Flame, Droplet, Play, ChevronDown, ChevronUp, ExternalLink, Dumbbell, Zap, X, Check, History } from "lucide-react-native";
 import { useRouter } from "expo-router";
 import { useAuth, api } from "../../src/auth";
 import { colors } from "../../src/theme";
@@ -82,17 +82,20 @@ export default function PlanScreen() {
   const [err, setErr] = useState("");
   const [tab, setTab] = useState<"workouts" | "overview">("workouts");
   const [prescription, setPrescription] = useState<any>(null);
+  const [history, setHistory] = useState<any[]>([]);
   const [showFeedback, setShowFeedback] = useState(false);
   const [activeSession, setActiveSession] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [pl, pr] = await Promise.all([
+      const [pl, pr, hi] = await Promise.all([
         api(token, "/api/plan"),
         api(token, "/api/workouts/prescription").catch(() => null),
+        api(token, "/api/workouts/history?limit=10").catch(() => ({ sessions: [] })),
       ]);
       setPlan(pl);
       setPrescription(pr);
+      setHistory(hi.sessions || []);
       setErr("");
     } catch (e: any) {
       setErr(e.message);
@@ -180,6 +183,38 @@ export default function PlanScreen() {
           </View>
         )}
 
+        {history.length > 0 && (
+          <View style={s.histCard}>
+            <View style={s.histHead}>
+              <History color={colors.primary} size={16} />
+              <Text style={s.histTitle}>Your last {history.length} session{history.length === 1 ? "" : "s"}</Text>
+            </View>
+            {history.slice(0, 10).map((h: any) => {
+              const d = h.completed_at ? new Date(h.completed_at) : null;
+              const when = d
+                ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) +
+                  " · " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+                : "—";
+              const tag = h.weight_feedback === "too_easy"
+                ? { label: "TOO EASY", color: "#22D3EE" }
+                : h.weight_feedback === "too_hard"
+                ? { label: "TOO HARD", color: colors.error }
+                : { label: "JUST RIGHT", color: colors.success };
+              return (
+                <View key={h.id} style={s.histRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.histWhen}>{when}</Text>
+                    {h.note ? <Text style={s.histNote} numberOfLines={2}>{h.note}</Text> : null}
+                  </View>
+                  <View style={[s.histTag, { borderColor: tag.color + "66", backgroundColor: tag.color + "1A" }]}>
+                    <Text style={[s.histTagText, { color: tag.color }]}>{tag.label}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         <View style={s.metrics}>
           <View style={s.metric}>
             <Flame color={colors.primary} size={16} />
@@ -235,8 +270,12 @@ export default function PlanScreen() {
         onDone={async (res: any) => {
           setShowFeedback(false);
           if (res?.message) Alert.alert("Workout logged", `${res.message}\n+${res?.xp?.xp_delta || 0} XP`);
-          const pr = await api(token, "/api/workouts/prescription").catch(() => null);
+          const [pr, hi] = await Promise.all([
+            api(token, "/api/workouts/prescription").catch(() => null),
+            api(token, "/api/workouts/history?limit=10").catch(() => ({ sessions: [] })),
+          ]);
           setPrescription(pr);
+          setHistory(hi.sessions || []);
           setActiveSession(null);
         }}
       />
@@ -378,4 +417,20 @@ const s = StyleSheet.create({
   btnText: { color: "#000", fontWeight: "800" },
   outlineBtn: { borderColor: colors.primary, borderWidth: 1, padding: 14, borderRadius: 999, alignItems: "center", marginTop: 20 },
   outlineText: { color: colors.primary, fontWeight: "700" },
+  histCard: {
+    backgroundColor: colors.surface, padding: 16, borderRadius: 18,
+    borderColor: colors.border, borderWidth: 1, marginBottom: 20,
+  },
+  histHead: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  histTitle: { color: colors.text, fontSize: 14, fontWeight: "800", letterSpacing: 0.3 },
+  histRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingVertical: 10, borderBottomColor: colors.border, borderBottomWidth: 1,
+  },
+  histWhen: { color: colors.text, fontSize: 13, fontWeight: "700" },
+  histNote: { color: colors.textMuted, fontSize: 11, marginTop: 2 },
+  histTag: {
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, borderWidth: 1,
+  },
+  histTagText: { fontSize: 9, fontWeight: "900", letterSpacing: 1.2 },
 });

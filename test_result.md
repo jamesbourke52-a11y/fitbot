@@ -315,10 +315,163 @@ frontend:
             is_pr flag flips true/false based on max weight_kg per exercise.
             No blockers; test suite saved at /app/progress_test.py.
 
+  - task: "Workout prescription respects workout_style + history endpoint"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+          agent: "main"
+          comment: |
+            BUG FIX: /api/workouts/prescription was not passing the user's
+            workout_style to build_prescription(), so calisthenics/home users
+            were getting barbell exercises (bench press, squat, deadlift).
+            Now reads quiz.workout_style from db.plans and passes style=
+            kwarg. build_prescription() already supports gym / calisthenics /
+            home / mixed (mixed falls back to gym).
+
+            Also added GET /api/workouts/history?limit=10 which returns the
+            user's most recent COMPLETED workout sessions sorted by
+            completed_at DESC, with feedback fields hoisted (weight_feedback,
+            reps_feedback, note) for easy rendering. total_completed count
+            included.
+
+            Tests to run:
+              1) Register a fresh user, submit quiz with workout_style="calisthenics"
+                 → GET /api/workouts/prescription.prescription.style == "calisthenics"
+                 → key_lifts should NOT contain "Bench press", "Back squat",
+                   "Deadlift" (all barbell). They should be bodyweight moves
+                   like "Incline push-ups", "Bodyweight squats", etc.
+                 → every key_lift has bodyweight: true
+              2) Same flow with workout_style="home"
+                 → key_lifts include "Dumbbell chest press", "Goblet squat"
+                 → weight_display present (non-bodyweight)
+              3) workout_style="gym" (default)
+                 → key_lifts include "Bench press", "Back squat"
+              4) GET /api/workouts/history?limit=10 (no completed workouts)
+                 → { sessions: [], total_completed: 0 }
+              5) Start workout → submit feedback → history returns 1 session
+                 with weight_feedback + reps_feedback populated.
+              6) GET /api/workouts/history with no auth → 401.
+        -working: true
+          agent: "testing"
+          comment: |
+            Workout-style fix + history endpoint fully verified — 14/14
+            assertions PASS via public REACT_APP_BACKEND_URL. Suite saved at
+            /app/coach_test.py. Used admin@fitlux.com / Admin@12345 (admins
+            bypass require_active_subscription on /quiz/submit).
+              GYM:
+                - submit_quiz(workout_style="gym") → 200
+                - GET /workouts/prescription → prescription.style == "gym",
+                  key_lifts include "Bench press" and "Back squat" ✓
+              CALISTHENICS:
+                - submit_quiz(workout_style="calisthenics") → 200
+                - prescription.style == "calisthenics"
+                - NO key_lift in {Bench press, Back squat, Deadlift,
+                  Overhead press}
+                - every key_lift has bodyweight=True ✓
+              HOME:
+                - submit_quiz(workout_style="home") → 200
+                - prescription.style == "home"
+                - key_lifts contain "Dumbbell chest press" or "Goblet squat"
+                - at least one key_lift has weight_display + weight_unit
+                  (NOT bodyweight) ✓
+              AUTH:
+                - GET /workouts/prescription with no Authorization → 401 ✓
+              HISTORY (fresh user):
+                - GET /workouts/history → {sessions: [], total_completed: 0} ✓
+                - POST /workouts/start → 200 with session_id
+                - POST /workouts/feedback (just_right / just_right) → 200
+                - GET /workouts/history?limit=10 → 1 session,
+                  completed=true, weight_feedback="just_right",
+                  reps_feedback="just_right", total_completed >= 1 ✓
+                - GET /workouts/history?limit=5 honours limit ✓
+                - GET /workouts/history with no Authorization → 401 ✓
+            No blockers; bug fix confirmed. Calisthenics/home users no longer
+            receive barbell exercises.
+
+  - task: "Coach briefing + walkthrough endpoints"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+          agent: "main"
+          comment: |
+            New endpoints that make the coach feel "right there with the user":
+
+            GET /api/coach/briefing  (any authed user)
+              - Builds context: quiz, level, bodyweight, prescription,
+                last-5 sessions, weight trend, time of day.
+              - Calls Claude Sonnet 4.5 via LlmChat for a warm, 110-word
+                personal greeting that mentions 1-2 key lifts by name.
+              - Fallback template used if LLM fails (no 500 ever).
+              - Returns { greeting, level, style, time_of_day,
+                prescription_summary, awaiting_feedback, has_plan }.
+              - has_plan=false when user hasn't completed quiz — UI hides card.
+
+            POST /api/coach/walkthrough  (active subscription required)
+              - Detailed conversational walkthrough of today's workout
+                (warm-up cue + every key lift with form/mental cue +
+                accessories + cool-down). Under 220 words.
+              - Fallback template used if LLM fails.
+              - Persisted to chat_messages with kind="walkthrough" so it
+                appears in the Coach tab history.
+
+            Tests to run:
+              1) GET /api/coach/briefing as authed user who HAS completed quiz
+                 → 200, has_plan=true, greeting non-empty, level has name+emoji,
+                   prescription_summary.sets numeric, key_lifts array.
+              2) Same endpoint for user WITHOUT plan (fresh register, no quiz)
+                 → 200, has_plan=false, greeting still returned (fallback ok).
+              3) GET /api/coach/briefing no auth → 401.
+              4) POST /api/coach/walkthrough active subscriber → 200,
+                 reply non-empty, session_id starts with "coach-".
+              5) POST /api/coach/walkthrough non-subscriber → 402.
+              6) After POST walkthrough, GET /api/coach/history returns the
+                 new walkthrough message with kind="walkthrough".
+        -working: true
+          agent: "testing"
+          comment: |
+            Coach briefing + walkthrough endpoints fully verified — 17/17
+            assertions PASS via public REACT_APP_BACKEND_URL using
+            EMERGENT_LLM_KEY (Claude Sonnet 4.5). Suite at /app/coach_test.py
+            (HTTP timeout 120s — actual LLM round-trip ~10-20s observed in
+            backend logs).
+              GET /api/coach/briefing (admin, has plan):
+                - 200, has_plan=true ✓
+                - greeting non-empty string (LLM-generated, not fallback) ✓
+                - level has name+emoji ✓
+                - keys present: style, time_of_day, awaiting_feedback (bool) ✓
+                - prescription_summary has sets, key_lifts[], accessories[],
+                  adjustment_factor ✓
+              GET /api/coach/briefing (fresh user, NO plan):
+                - 200, has_plan=false ✓
+                - greeting still non-empty (fallback path works) ✓
+                - level defaults to Rookie ✓
+              GET /api/coach/briefing (no Authorization) → 401 ✓
+              POST /api/coach/walkthrough (admin):
+                - 200, reply non-empty ✓
+                - session_id starts with "coach-" ✓
+              POST /api/coach/walkthrough (fresh non-subscriber) → 402 ✓
+              GET /api/coach/history (after walkthrough) returns the
+              walkthrough reply as an assistant message (text matches
+              exactly) ✓
+            Backend log shows successful LiteLLM completion() calls to
+            claude-sonnet-4-5-20250929 for both /coach/briefing (admin +
+            fresh) and /coach/walkthrough. No 5xx observed; fallback path
+            unused but exists. No blockers.
+
 metadata:
   created_by: "main_agent"
-  version: "1.2"
-  test_sequence: 2
+  version: "1.3"
+  test_sequence: 3
   run_ui: false
 
 test_plan:
@@ -447,3 +600,48 @@ agent_communication:
         Backend log shows 5× "POST /api/level/assess 200" (assessments),
         1× "400" (missing answer), 1× "400" (invalid index), 1× "401"
         (no auth), all matching expectations. No blockers; ready to merge.
+
+    -agent: "testing"
+      message: |
+        New session backend verification complete — 49/49 assertions PASS via
+        public REACT_APP_BACKEND_URL (https://fitbot-whatsapp.preview.emergentagent.com/api).
+        Suite saved at /app/coach_test.py.
+
+        1) WORKOUT-STYLE BUG FIX (/api/workouts/prescription):
+           - gym → prescription.style="gym", barbell lifts present (Bench
+             press / Back squat) ✓
+           - calisthenics → prescription.style="calisthenics", NO barbell
+             lifts, every key_lift bodyweight=true ✓
+           - home → prescription.style="home", contains "Dumbbell chest
+             press" / "Goblet squat", weight_display present ✓
+           - no-auth → 401 ✓
+           Confirms /api/workouts/prescription now reads quiz.workout_style
+           and forwards to build_prescription(style=...).
+
+        2) WORKOUT HISTORY (/api/workouts/history):
+           - empty fresh user → {sessions: [], total_completed: 0} ✓
+           - after start + just_right/just_right feedback → 1 session
+             with completed=true and weight_feedback/reps_feedback
+             populated ✓
+           - ?limit=5 honoured ✓
+           - no-auth → 401 ✓
+
+        3) COACH BRIEFING + WALKTHROUGH (Claude Sonnet 4.5 via
+           EMERGENT_LLM_KEY):
+           - GET /coach/briefing admin (has plan) → 200, has_plan=true,
+             greeting non-empty, level{name+emoji}, prescription_summary
+             {sets, key_lifts, accessories, adjustment_factor},
+             awaiting_feedback bool, style, time_of_day ✓
+           - GET /coach/briefing fresh user (no plan) → 200, has_plan=false,
+             greeting still non-empty (fallback path), level=Rookie ✓
+           - GET /coach/briefing no-auth → 401 ✓
+           - POST /coach/walkthrough admin → 200, reply non-empty,
+             session_id starts with "coach-" ✓
+           - POST /coach/walkthrough non-subscriber → 402 ✓
+           - GET /coach/history shows the walkthrough reply as an
+             assistant message (text matches exactly) ✓
+
+        Backend logs show successful claude-sonnet-4-5-20250929 round-trips
+        on every LLM call (no fallback exercised, but fallback code path
+        exists if LLM ever fails). LLM latency ~10-20s observed; suite
+        uses 120s HTTP timeout for these endpoints. No 5xx, no blockers.

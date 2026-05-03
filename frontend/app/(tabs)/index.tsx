@@ -11,6 +11,7 @@ import {
 import { useAuth, api } from "../../src/auth";
 import { colors } from "../../src/theme";
 import { useRouter } from "expo-router";
+import CoachBriefingCard from "../../src/components/CoachBriefingCard";
 
 type Reminder = { id: string; label: string; time: string; icon: string };
 type Today = {
@@ -175,6 +176,8 @@ export default function Home() {
             <Text style={s.avatarText}>{(user?.name || "?")[0].toUpperCase()}</Text>
           </TouchableOpacity>
         </View>
+
+        <CoachBriefingCard token={token} />
 
         <ImageBackground
           source={{ uri: "https://images.pexels.com/photos/29392549/pexels-photo-29392549.jpeg" }}

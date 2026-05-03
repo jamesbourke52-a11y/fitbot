@@ -702,6 +702,183 @@ async def coach_history(user: dict = Depends(get_current_user)):
     return {"messages": msgs}
 
 
+# ----------------------- Coach daily briefing -----------------------
+def _time_of_day(hour: int) -> str:
+    if hour < 5:  return "late night"
+    if hour < 12: return "morning"
+    if hour < 17: return "afternoon"
+    if hour < 21: return "evening"
+    return "night"
+
+
+async def _build_coach_context(user: dict) -> dict:
+    """Gather compact context the coach needs for a personal briefing."""
+    plan = await db.plans.find_one({"user_id": user["id"]}) or {}
+    quiz = plan.get("quiz") or {}
+    lvl_doc = await db.user_levels.find_one({"user_id": user["id"]}) or {}
+    xp = int(lvl_doc.get("xp", 0))
+    lv = level_for_xp(xp)
+    prefs = await db.user_prefs.find_one({"user_id": user["id"]}) or {}
+    unit = prefs.get("units", "metric")
+
+    # Last weight + previous for trend
+    weights = await db.weight_entries.find(
+        {"user_id": user["id"]}, {"_id": 0},
+    ).sort("logged_at", -1).to_list(2)
+    last_w = weights[0] if weights else None
+    prev_w = weights[1] if len(weights) > 1 else None
+    bodyweight_kg = (
+        float(last_w["weight_kg"]) if last_w
+        else float(quiz.get("weight_kg") or 75.0)
+    )
+    style = (quiz.get("workout_style") or "gym").lower()
+    state = await db.training_state.find_one({"user_id": user["id"]}) or {}
+    adj = float(state.get("adjust", 1.0))
+    prescription = build_prescription(lv["id"], bodyweight_kg, adj, unit, style=style)
+
+    # Last few completed sessions for streak / momentum
+    last_sessions = await db.workout_sessions.find(
+        {"user_id": user["id"], "completed": True}, {"_id": 0},
+    ).sort("completed_at", -1).to_list(5)
+
+    return {
+        "plan": plan, "quiz": quiz, "level": lv, "xp": xp,
+        "unit": unit, "style": style, "bodyweight_kg": bodyweight_kg,
+        "last_w": last_w, "prev_w": prev_w,
+        "prescription": prescription, "adjust": adj,
+        "last_sessions": last_sessions,
+    }
+
+
+@api_router.get("/coach/briefing")
+async def coach_briefing(user: dict = Depends(get_current_user)):
+    """Return an AI-generated personalized greeting + walkthrough of today's plan."""
+    ctx = await _build_coach_context(user)
+    now = datetime.now(timezone.utc)
+    tod = _time_of_day(now.hour)
+    name = (user.get("name") or "").split(" ")[0] or "there"
+    quiz = ctx["quiz"]
+    lv = ctx["level"]
+    p = ctx["prescription"]
+    key_lifts_summary = ", ".join(
+        (f"{l['name']} {l.get('weight_display','')}{l.get('weight_unit','')}×{l['reps']}"
+         if not l.get("bodyweight") else f"{l['name']} ×{l['reps']}")
+        for l in p["key_lifts"][:3]
+    )
+    streak = len(ctx["last_sessions"])
+    trend = ""
+    if ctx["last_w"] and ctx["prev_w"]:
+        d = ctx["last_w"]["weight_kg"] - ctx["prev_w"]["weight_kg"]
+        trend = f"Weight delta: {'+' if d >= 0 else ''}{round(d,1)} kg since last log."
+
+    system = (
+        "You are FITLUX COACH — a futuristic, high-energy AI personal trainer who greets "
+        "the user like a real human coach walking them through the gym. "
+        "Speak in second person, be warm but punchy, use short sentences. "
+        "NEVER use markdown, bullet lists, or asterisks. Plain paragraphs only. "
+        "Keep the whole response under 110 words. Focus on: (1) warm greeting by name, "
+        "(2) one insight about their current momentum/level, (3) walk them through today's "
+        "workout in 2-3 sentences (mention 1-2 key lifts by name), (4) a crisp motivating kicker."
+    )
+    prompt = (
+        f"Context:\n"
+        f"Name: {name}\n"
+        f"Time of day: {tod} (local hour {now.hour} UTC)\n"
+        f"Goal: {quiz.get('goal','general_fitness')}\n"
+        f"Level: {lv['name']} {lv['emoji']} ({ctx['xp']} XP)\n"
+        f"Style: {ctx['style']}\n"
+        f"Completed sessions on record: {streak}\n"
+        f"Difficulty factor: ×{p['adjustment_factor']}\n"
+        f"{trend}\n"
+        f"Today's key lifts ({p['sets']} sets): {key_lifts_summary}\n\n"
+        f"Write the briefing now."
+    )
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"briefing-{user['id']}-{now.strftime('%Y%m%d%H')}",
+            system_message=system,
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        reply = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        logger.warning(f"[coach:briefing] llm fail, using fallback: {e}")
+        reply = (
+            f"Good {tod}, {name}. You're sitting at {lv['name']} {lv['emoji']} with "
+            f"{ctx['xp']} XP. Today we're hitting {p['sets']} sets — lead with "
+            f"{key_lifts_summary}. Lock the form in, breathe through every rep. Let's move."
+        )
+
+    return {
+        "greeting": reply,
+        "level": lv,
+        "style": ctx["style"],
+        "time_of_day": tod,
+        "prescription_summary": {
+            "sets": p["sets"],
+            "key_lifts": p["key_lifts"],
+            "accessories": p["accessories"],
+            "adjustment_factor": p["adjustment_factor"],
+        },
+        "awaiting_feedback": bool((await db.training_state.find_one(
+            {"user_id": user["id"]}) or {}).get("awaiting_feedback")),
+        "has_plan": bool(ctx["quiz"]),
+    }
+
+
+@api_router.post("/coach/walkthrough")
+async def coach_walkthrough(user: dict = Depends(require_active_subscription)):
+    """Return a detailed spoken-style walkthrough of today's workout, exercise by exercise."""
+    ctx = await _build_coach_context(user)
+    name = (user.get("name") or "").split(" ")[0] or "friend"
+    p = ctx["prescription"]
+    lifts_block = "\n".join(
+        (f"- {l['name']} — {p['sets']} sets × {l['reps']} reps"
+         + (f" @ {l['weight_display']} {l['weight_unit']}" if not l.get('bodyweight') else " (bodyweight)"))
+        for l in p["key_lifts"]
+    )
+    acc_block = "\n".join(
+        f"- {a['name']} — {p['sets']} sets × {a['reps']}"
+        for a in p["accessories"]
+    )
+    system = (
+        "You are FITLUX COACH, doing a walk-through next to the user on the gym floor. "
+        "Talk like a real, calm human coach — conversational, motivating, no markdown, "
+        "no bullets, no asterisks. Plain paragraphs. Take them through the session in order: "
+        "a 2-sentence warm-up cue, then each key lift (form cue + mental cue), then "
+        "accessories (quick), then a 1-sentence cool-down. Under 220 words total."
+    )
+    prompt = (
+        f"Client: {name}, level {ctx['level']['name']} {ctx['level']['emoji']}, "
+        f"style {ctx['style']}, difficulty ×{p['adjustment_factor']}.\n"
+        f"KEY LIFTS:\n{lifts_block}\n"
+        f"ACCESSORIES:\n{acc_block}\n\n"
+        f"Walk them through now."
+    )
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"walkthrough-{user['id']}",
+            system_message=system,
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        reply = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        logger.warning(f"[coach:walkthrough] fallback: {e}")
+        reply = (
+            f"Okay {name}, five minutes of mobility to start. "
+            f"We open with {p['key_lifts'][0]['name']} — controlled reps, full range. "
+            f"Stack the rest of the sets with intent. Finish with accessories and a 3-minute cooldown."
+        )
+    # Persist into the chat history so it appears in the coach tab
+    sid = f"coach-{user['id']}"
+    await db.chat_messages.insert_one({
+        "user_id": user["id"], "session_id": sid, "role": "assistant",
+        "text": reply, "at": datetime.now(timezone.utc).isoformat(),
+        "kind": "walkthrough",
+    })
+    return {"reply": reply, "session_id": sid}
+
+
 # ----------------------- Products & Amazon Affiliate -----------------------
 # Approved Amazon Associates marketplaces for tag jamesbourke52-20:
 # CA, DE, ES, FR, IT, NL, PL, SE, UK. Update env per region as more get
@@ -1453,14 +1630,45 @@ async def workout_prescription(user: dict = Depends(get_current_user)):
     lv = level_for_xp(int(lvl_doc.get("xp", 0)))
     last_w = await db.weight_entries.find_one(
         {"user_id": user["id"]}, sort=[("logged_at", -1)])
-    bodyweight_kg = float(last_w["weight_kg"]) if last_w else 75.0
+    # Fall back to quiz bodyweight if the user hasn't logged weight yet.
+    plan = await db.plans.find_one({"user_id": user["id"]}) or {}
+    quiz = plan.get("quiz") or {}
+    if last_w:
+        bodyweight_kg = float(last_w["weight_kg"])
+    elif quiz.get("weight_kg"):
+        bodyweight_kg = float(quiz["weight_kg"])
+    else:
+        bodyweight_kg = 75.0
+    style = (quiz.get("workout_style") or "gym").lower()
     state = await db.training_state.find_one({"user_id": user["id"]}) or {}
     adj = float(state.get("adjust", 1.0))
-    prescription = build_prescription(lv["id"], bodyweight_kg, adj, unit)
+    prescription = build_prescription(lv["id"], bodyweight_kg, adj, unit, style=style)
     return {"level": lv, "bodyweight_kg": bodyweight_kg, "unit": unit,
+            "style": style,
             "prescription": prescription,
             "awaiting_feedback": bool(state.get("awaiting_feedback")),
             "current_session_id": state.get("current_session_id")}
+
+
+@api_router.get("/workouts/history")
+async def workout_history(limit: int = 10, user: dict = Depends(get_current_user)):
+    """Return the user's most recent completed workout sessions."""
+    limit = max(1, min(50, int(limit)))
+    cursor = db.workout_sessions.find(
+        {"user_id": user["id"], "completed": True},
+        {"_id": 0},
+    ).sort("completed_at", -1)
+    sessions = await cursor.to_list(limit)
+    # Enrich with light formatting — coach needs date + feedback labels.
+    for s in sessions:
+        fb = s.get("feedback") or {}
+        s["weight_feedback"] = fb.get("weight_feedback")
+        s["reps_feedback"] = fb.get("reps_feedback")
+        s["note"] = fb.get("note")
+    total = await db.workout_sessions.count_documents(
+        {"user_id": user["id"], "completed": True}
+    )
+    return {"sessions": sessions, "total_completed": total}
 
 
 @api_router.post("/workouts/start")
