@@ -93,8 +93,81 @@ def to_display(stored_kg: Optional[float], stored_cm_fields: Optional[dict], uni
     return out
 
 
+# ---------------- Experience assessment ----------------
+# 5 questions, each with 5 choices scoring 0..4. Total 0-20, mapped to a
+# starting level. EXTREME (rank 8) is NOT assignable by the quiz — it must
+# be earned through XP.
+LEVEL_QUIZ = [
+    {
+        "id": "experience",
+        "question": "How long have you been training consistently?",
+        "options": [
+            {"label": "Never — I'm brand new",            "score": 0},
+            {"label": "Less than 6 months",               "score": 1},
+            {"label": "6 months to 2 years",              "score": 2},
+            {"label": "2 to 5 years",                     "score": 3},
+            {"label": "5+ years · serious lifter",        "score": 4},
+        ],
+    },
+    {
+        "id": "frequency",
+        "question": "How many workouts do you currently do per week?",
+        "options": [
+            {"label": "0 — starting fresh",               "score": 0},
+            {"label": "1-2 · casual",                     "score": 1},
+            {"label": "3-4 · regular",                    "score": 2},
+            {"label": "5 · dedicated",                    "score": 3},
+            {"label": "6+ · training every day",          "score": 4},
+        ],
+    },
+    {
+        "id": "pullups",
+        "question": "How many strict pull-ups can you do in one set?",
+        "options": [
+            {"label": "None",                             "score": 0},
+            {"label": "1 to 5",                           "score": 1},
+            {"label": "6 to 12",                          "score": 2},
+            {"label": "13 to 20",                         "score": 3},
+            {"label": "20+ (with added weight)",          "score": 4},
+        ],
+    },
+    {
+        "id": "bench",
+        "question": "Heaviest bench press (or similar) for 5 reps?",
+        "options": [
+            {"label": "I don't bench / bar only",         "score": 0},
+            {"label": "Bodyweight × 0.5",                 "score": 1},
+            {"label": "Bodyweight × 1.0",                 "score": 2},
+            {"label": "Bodyweight × 1.3",                 "score": 3},
+            {"label": "Bodyweight × 1.5 or more",         "score": 4},
+        ],
+    },
+    {
+        "id": "recovery",
+        "question": "After a hard workout, how do you feel?",
+        "options": [
+            {"label": "Wrecked for 3-4 days",             "score": 0},
+            {"label": "Sore for 2-3 days",                "score": 1},
+            {"label": "Mild DOMS next day",               "score": 2},
+            {"label": "Barely sore — ready again fast",   "score": 3},
+            {"label": "Full recovery within hours",       "score": 4},
+        ],
+    },
+]
+
+# Total score → level id mapping. Assessment cap is 7 (Legend).
+# EXTREME (8) must still be earned through XP.
+def assess_level_id(total_score: int) -> int:
+    if total_score <= 2:   return 1   # Rookie
+    if total_score <= 5:   return 2   # Novice
+    if total_score <= 9:   return 3   # Athlete
+    if total_score <= 12:  return 4   # Warrior
+    if total_score <= 15:  return 5   # Beast
+    if total_score <= 18:  return 6   # Titan
+    return 7                           # Legend
+
+
 # ---------------- XP awarding ----------------
-# Actions that grant XP:
 XP_RULES = {
     "workout_completed": 25,
     "measurement_logged": 10,

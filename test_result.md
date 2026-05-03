@@ -327,6 +327,10 @@ test_plan:
   test_all: false
   test_priority: "high_first"
 
+# Latest backend test addition:
+# - Level Assessment endpoints (GET /api/level/quiz, POST /api/level/assess,
+#   GET /api/me/level smoke). Suite at /app/level_assess_test.py — 28/28 pass.
+
 agent_communication:
     -agent: "main"
       message: |
@@ -404,3 +408,42 @@ agent_communication:
           - Auth gating: unauth GET /me/level and /progress/weight → 401.
           - Smoke: /auth/me (fresh user) + /admin/metrics (admin) still 200.
         No blockers observed in backend logs. Ready to ship.
+    -agent: "testing"
+      message: |
+        Level-assessment endpoints fully verified — 28/28 assertions PASS via
+        public REACT_APP_BACKEND_URL. Suite saved at /app/level_assess_test.py.
+        Note: backend was hot-reloaded once during test prep — first attempts
+        of /api/level/quiz hit a stale-import 500 ("name 'LEVEL_QUIZ' is not
+        defined"). After the supervisor reload picked up the latest server.py
+        (which adds `LEVEL_QUIZ, assess_level_id` to the progress_service
+        import), all calls returned 200. No code changes were required from me.
+
+        Coverage:
+          1) GET /api/level/quiz (no auth) → 200, exactly 5 questions with
+             ids ["experience","frequency","pullups","bench","recovery"];
+             every option has {label, score} and 0 ≤ score ≤ 4 ✓
+          2) POST /api/level/assess all-zeros (admin token)
+             → total_score=0, recommended_level.name="Rookie" ✓
+          3) POST /api/level/assess all-2s
+             → total_score=10, recommended_level.name="Warrior" ✓
+          4) POST /api/level/assess all-4s
+             → total_score=20, recommended_level.name="Legend"
+             (NEVER EXTREME — confirmed) ✓
+          5) POST /api/level/assess all-3s with apply=true
+             → total_score=15, recommended_level.id=5 (Beast),
+             applied=true. GET /api/me/level after apply returns
+             level.id ≥ 5 (admin already had higher XP from earlier
+             progress tests, so $max kept the higher value, which is
+             the documented behaviour — applying never demotes) ✓
+          6) POST /api/level/assess missing "recovery" key
+             → 400 with detail "Missing/invalid answer for recovery" ✓
+          7) POST /api/level/assess invalid option index 99
+             → 400 ✓
+          8) GET /api/level/quiz with no Authorization → 200 (public) ✓
+             POST /api/level/assess with no Authorization → 401 ✓
+          9) Smoke: GET /api/admin/metrics (admin) → 200,
+             GET /api/me/level (admin) → 200 ✓
+
+        Backend log shows 5× "POST /api/level/assess 200" (assessments),
+        1× "400" (missing answer), 1× "400" (invalid index), 1× "401"
+        (no auth), all matching expectations. No blockers; ready to merge.

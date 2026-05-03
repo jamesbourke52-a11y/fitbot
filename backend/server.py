@@ -1122,6 +1122,7 @@ async def admin_metrics(user: dict = Depends(require_admin)):
 from progress_service import (
     LEVELS, level_for_xp, next_level, MEASUREMENT_FIELDS,
     _normalize_weight_kg, _normalize_length_cm, to_display, award_xp,
+    LEVEL_QUIZ, assess_level_id,
 )
 
 
@@ -1197,6 +1198,66 @@ async def set_prefs(req: UserPrefs, user: dict = Depends(get_current_user)):
 @api_router.get("/levels")
 async def list_levels():
     return {"levels": LEVELS}
+
+
+@api_router.get("/level/quiz")
+async def level_quiz():
+    """Return the 5-question experience assessment."""
+    return {"questions": LEVEL_QUIZ}
+
+
+class LevelAssessmentSubmit(BaseModel):
+    answers: Dict[str, int]  # question_id -> chosen option index (0..4)
+    apply: bool = False       # if true, set the user's starting_level
+
+
+@api_router.post("/level/assess")
+async def assess_level(req: LevelAssessmentSubmit, user: dict = Depends(get_current_user)):
+    total = 0
+    breakdown = {}
+    for q in LEVEL_QUIZ:
+        chosen = req.answers.get(q["id"])
+        if chosen is None or chosen < 0 or chosen >= len(q["options"]):
+            raise HTTPException(status_code=400,
+                                detail=f"Missing/invalid answer for {q['id']}")
+        score = q["options"][chosen]["score"]
+        total += score
+        breakdown[q["id"]] = {"choice": chosen, "score": score,
+                              "label": q["options"][chosen]["label"]}
+
+    level_id = assess_level_id(total)
+    lv = next(l for l in LEVELS if l["id"] == level_id)
+    now = datetime.now(timezone.utc).isoformat()
+    await db.level_assessments.insert_one({
+        "id": str(uuid.uuid4()), "user_id": user["id"],
+        "total_score": total, "max_score": 20,
+        "breakdown": breakdown, "recommended_level": level_id,
+        "created_at": now,
+    })
+
+    applied = False
+    if req.apply:
+        await db.user_levels.update_one(
+            {"user_id": user["id"]},
+            {"$setOnInsert": {"user_id": user["id"], "created_at": now, "events": 0},
+             "$max": {"xp": lv["min_xp"]},
+             "$set": {"starting_level": level_id}},
+            upsert=True,
+        )
+        await db.user_prefs.update_one(
+            {"user_id": user["id"]},
+            {"$set": {"starting_level": level_id}},
+            upsert=True,
+        )
+        applied = True
+
+    return {
+        "total_score": total,
+        "max_score": 20,
+        "breakdown": breakdown,
+        "recommended_level": lv,
+        "applied": applied,
+    }
 
 
 @api_router.get("/me/level")
