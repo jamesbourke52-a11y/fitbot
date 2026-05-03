@@ -33,6 +33,7 @@ Additional admin emails auto-promoted from ADMIN_EMAILS env (currently jamesbour
 In-app Admin Dashboard at /admin: metrics · promo code CRUD · influencer payouts · earnings feed.
 
 ## Progress tracking + gamification (v1.1)
+- **Experience assessment quiz** (5 questions: training history, weekly frequency, pull-ups, bench press, recovery). Maps a total score 0-20 to a recommended rank (Rookie → Legend — EXTREME must still be earned through XP). Accessible from `/level-up` via the gold "Not sure? Take the assessment" button, opens as a bottom-sheet modal with progress bar + result card.
 - **Progress tab** (bottom nav slot #3): Overview · Body · Photos · Strength
 - **Body weight log**: metric/imperial toggle per user, trend chart (SVG), insight line
 - **Body measurements**: 11 body parts (neck, shoulders, chest, L/R arm, waist, hips, L/R thigh, L/R calf) with history
