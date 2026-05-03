@@ -51,7 +51,7 @@ export default function Privacy() {
         <Text style={s.p}>Account data is kept while your account exists. After deletion we keep minimal billing records for 7 years (UK/EU tax law). Anonymous aggregated analytics may be kept indefinitely.</Text>
 
         <Text style={s.h2}>7. Your rights</Text>
-        <Text style={s.p}>You can access, correct, export, restrict, or delete your data, and object to processing. Email <Text style={s.link}>privacy@fitlux.app</Text> with the request — we respond within 30 days.</Text>
+        <Text style={s.p}>You can access, correct, export, restrict, or delete your data, and object to processing. Email <Text style={s.link}>privacy@fitlux.fitness</Text> with the request — we respond within 30 days.</Text>
 
         <Text style={s.h2}>8. Children</Text>
         <Text style={s.p}>FitLux is not for users under 16. We do not knowingly collect their data. If you believe a minor has signed up, contact us and we will delete the account.</Text>
@@ -66,7 +66,7 @@ export default function Privacy() {
         <Text style={s.p}>We may update this policy; material changes will be announced in-app at least 14 days before they take effect.</Text>
 
         <Text style={s.h2}>12. Contact</Text>
-        <Text style={s.p}>FitLux · privacy@fitlux.app</Text>
+        <Text style={s.p}>FitLux · privacy@fitlux.fitness</Text>
 
         <View style={{ height: 60 }} />
       </ScrollView>

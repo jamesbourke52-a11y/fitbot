@@ -57,7 +57,7 @@ export default function Terms() {
         <Text style={s.p}>We may update these terms; we will notify you in-app at least 14 days before material changes take effect.</Text>
 
         <Text style={s.h2}>13. Contact</Text>
-        <Text style={s.p}>FitLux · support@fitlux.app</Text>
+        <Text style={s.p}>FitLux · support@fitlux.fitness</Text>
 
         <View style={{ height: 60 }} />
       </ScrollView>
