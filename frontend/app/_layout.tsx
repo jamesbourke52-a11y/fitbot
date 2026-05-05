@@ -21,6 +21,7 @@ export default function RootLayout() {
             <Stack.Screen name="privacy" />
             <Stack.Screen name="terms" />
             <Stack.Screen name="level-up" />
+            <Stack.Screen name="workout-session" options={{ presentation: "fullScreenModal", animation: "slide_from_bottom" }} />
             <Stack.Screen name="(tabs)" />
           </Stack>
         </AuthProvider>

@@ -312,6 +312,125 @@ def _ex(eid: str, sets_reps: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
+# ---------- Prescription → tutorial enrichment ----------
+# Maps prescription exercise ids (used in progress_service.LEVEL_PROGRAMMING)
+# to a (search_query, image_category) so we can show a matching tutorial
+# video and thumbnail next to every prescribed lift.
+_PRESC_META: Dict[str, Dict[str, str]] = {
+    # ---- gym (barbell)
+    "bench":     {"search": "barbell bench press proper form", "img": IMG_BARBELL,
+                  "tip": "Retract scapulae, controlled descent, drive through chest."},
+    "squat":     {"search": "barbell back squat proper form", "img": IMG_BARBELL,
+                  "tip": "Brace core, knees track toes, hit depth."},
+    "deadlift":  {"search": "conventional deadlift proper form", "img": IMG_BARBELL,
+                  "tip": "Neutral spine, bar close to body, push the floor away."},
+    "ohp":       {"search": "overhead press proper form barbell", "img": IMG_BARBELL,
+                  "tip": "Glutes tight, press straight up, head through at lockout."},
+    "row":       {"search": "seated cable row proper form", "img": IMG_PULL,
+                  "tip": "Pull with elbows, squeeze the mid-back."},
+    "chinup":    {"search": "chin up proper form", "img": IMG_PULL,
+                  "tip": "Underhand grip, pull chest to bar."},
+    # ---- bodyweight / calisthenics
+    "pushup":    {"search": "perfect push up form tutorial", "img": IMG_PUSH,
+                  "tip": "Core tight, elbows ~45°, full range."},
+    "incpush":   {"search": "incline push up form tutorial", "img": IMG_PUSH,
+                  "tip": "Hands elevated — easier for beginners."},
+    "diamond":   {"search": "diamond push up form tutorial", "img": IMG_PUSH,
+                  "tip": "Hands together to load triceps."},
+    "archpush":  {"search": "archer push up tutorial", "img": IMG_PUSH,
+                  "tip": "Shift weight side to side, near one-arm progression."},
+    "oap":       {"search": "one arm push up progression tutorial", "img": IMG_PUSH,
+                  "tip": "Wide stance early, narrow as you progress."},
+    "pike":      {"search": "pike push up form tutorial", "img": IMG_PUSH,
+                  "tip": "Hips high, head between hands at bottom."},
+    "wallHSPU":  {"search": "wall handstand push up form", "img": IMG_PUSH,
+                  "tip": "Stack shoulders over wrists, slow eccentric."},
+    "hspu":      {"search": "freestanding handstand push up", "img": IMG_PUSH,
+                  "tip": "Pike to handstand, control the descent."},
+    "pullup":    {"search": "pull up proper form tutorial", "img": IMG_PULL,
+                  "tip": "Strict, full range, no kipping."},
+    "asspull":   {"search": "band assisted pull up tutorial", "img": IMG_PULL,
+                  "tip": "Loop band on bar — light assist."},
+    "negpull":   {"search": "negative pull up tutorial", "img": IMG_PULL,
+                  "tip": "Jump to top, lower for 3-5 seconds."},
+    "wpull":     {"search": "weighted pull up form", "img": IMG_PULL,
+                  "tip": "Belt + plate or dumbbell between feet."},
+    "oapull":    {"search": "one arm pull up progression", "img": IMG_PULL,
+                  "tip": "Single-arm hang then pull — patience."},
+    "muscleup":  {"search": "strict bar muscle up tutorial", "img": IMG_PULL,
+                  "tip": "False grip, explosive pull, fast transition."},
+    "olc":       {"search": "one arm chin up progression", "img": IMG_PULL,
+                  "tip": "Underhand single-arm — extreme strength."},
+    "bwrow":     {"search": "inverted row body weight", "img": IMG_PULL,
+                  "tip": "Bar at hip height, body straight."},
+    "frontlvr":  {"search": "front lever progression tutorial", "img": IMG_CORE,
+                  "tip": "Posterior tilt, lats engaged."},
+    "backlvr":   {"search": "back lever tutorial", "img": IMG_CORE,
+                  "tip": "Slow eccentrics from skin-the-cat."},
+    "planche":   {"search": "planche lean progression", "img": IMG_PUSH,
+                  "tip": "Lean shoulders over wrists, scapula protracted."},
+    "humanflag": {"search": "human flag progression", "img": IMG_CORE,
+                  "tip": "Top arm pulls, bottom arm pushes."},
+    "ironx":     {"search": "iron cross rings progression", "img": IMG_CORE,
+                  "tip": "Rings — extreme advanced. Build slow."},
+    "maltese":   {"search": "maltese cross progression rings", "img": IMG_CORE,
+                  "tip": "Elite ring strength — long progression."},
+    "hefestop":  {"search": "hefesto pull up tutorial", "img": IMG_PULL,
+                  "tip": "Behind-the-back finish — extreme."},
+    "lsit_s":    {"search": "l sit hold tutorial", "img": IMG_CORE,
+                  "tip": "Push down on the floor, lock the knees."},
+    "plank_s":   {"search": "plank proper form tutorial", "img": IMG_CORE,
+                  "tip": "Brace core, glutes squeezed."},
+    "bwsquat":   {"search": "bodyweight squat proper form", "img": IMG_LEGS,
+                  "tip": "Hip crease below knee, chest tall."},
+    "airsq":     {"search": "air squat proper form tutorial", "img": IMG_LEGS,
+                  "tip": "Drive knees out, full depth, controlled."},
+    "lunge":     {"search": "walking lunge proper form", "img": IMG_LEGS,
+                  "tip": "Long step, drive through front heel."},
+    "bulgar":    {"search": "bulgarian split squat form", "img": IMG_LEGS,
+                  "tip": "Front heel planted, knee tracks toe."},
+    "pistol":    {"search": "pistol squat tutorial", "img": IMG_LEGS,
+                  "tip": "Counter-balance arms, slow descent."},
+    "shrimp":    {"search": "shrimp squat tutorial", "img": IMG_LEGS,
+                  "tip": "Single-leg, opposite leg held behind."},
+    "hipraise":  {"search": "glute bridge proper form", "img": IMG_LEGS,
+                  "tip": "Squeeze glutes hard at the top."},
+    "dip":       {"search": "parallel bar dip proper form", "img": IMG_PUSH,
+                  "tip": "Slight lean, full depth, control up."},
+    "dipbench":  {"search": "bench dip proper form", "img": IMG_PUSH,
+                  "tip": "Hands close, elbows tracking back."},
+    # ---- home (dumbbell / minimal kit)
+    "dbpress":   {"search": "dumbbell bench press form", "img": IMG_DUMBBELL,
+                  "tip": "Wrists stacked over elbows, control the descent."},
+    "goblet":    {"search": "goblet squat proper form", "img": IMG_DUMBBELL,
+                  "tip": "Hold one DB at chest, elbows inside knees at bottom."},
+    "frontsq":   {"search": "dumbbell front squat tutorial", "img": IMG_DUMBBELL,
+                  "tip": "DBs on shoulders, elbows high, vertical torso."},
+    "rdl":       {"search": "dumbbell romanian deadlift form", "img": IMG_DUMBBELL,
+                  "tip": "Hinge from hips, slight knee bend, hamstrings stretched."},
+    "dbrow":     {"search": "single arm dumbbell row form", "img": IMG_DUMBBELL,
+                  "tip": "Brace on bench, drive elbow back to hip."},
+    "dbohp":     {"search": "dumbbell shoulder press tutorial", "img": IMG_DUMBBELL,
+                  "tip": "Press straight up, biceps near ears at lockout."},
+}
+
+
+def _enrich_lift(lift: Dict[str, Any]) -> Dict[str, Any]:
+    """Attach a YouTube tutorial URL + thumbnail to a prescribed lift so the
+    UI can show a matching demo video for every exercise."""
+    meta = _PRESC_META.get(
+        lift.get("id"),
+        {"search": f"{lift.get('name', 'exercise')} proper form tutorial",
+         "img": IMG_DUMBBELL, "tip": ""},
+    )
+    out = dict(lift)
+    out["thumb"] = meta["img"]
+    out["demo_url"] = _yt(meta["search"])
+    if not out.get("tip") and meta.get("tip"):
+        out["tip"] = meta["tip"]
+    return out
+
+
 # Workout splits per style. Each split = list of days (rest days are also listed)
 # Split is selected by workout_days_per_week
 def build_workout_schedule(style: str, days_per_week: int) -> List[Dict[str, Any]]:
@@ -1643,6 +1762,10 @@ async def workout_prescription(user: dict = Depends(get_current_user)):
     state = await db.training_state.find_one({"user_id": user["id"]}) or {}
     adj = float(state.get("adjust", 1.0))
     prescription = build_prescription(lv["id"], bodyweight_kg, adj, unit, style=style)
+    # Enrich every exercise with thumb + demo_url so the workout-session
+    # screen can show tutorial videos that match the prescription.
+    prescription["key_lifts"] = [_enrich_lift(l) for l in prescription["key_lifts"]]
+    prescription["accessories"] = [_enrich_lift(a) for a in prescription["accessories"]]
     return {"level": lv, "bodyweight_kg": bodyweight_kg, "unit": unit,
             "style": style,
             "prescription": prescription,
@@ -1678,6 +1801,7 @@ async def workout_start(user: dict = Depends(get_current_user)):
     await db.workout_sessions.insert_one({
         "id": session_id, "user_id": user["id"],
         "started_at": now, "completed": False,
+        "exercises_log": [],
     })
     await db.training_state.update_one(
         {"user_id": user["id"]},
@@ -1687,6 +1811,67 @@ async def workout_start(user: dict = Depends(get_current_user)):
         upsert=True,
     )
     return {"session_id": session_id}
+
+
+class ExerciseLog(BaseModel):
+    session_id: str
+    exercise_id: str
+    exercise_name: str
+    completed: bool = True
+    form_rating: int = 3       # 1-5 (1 ugly, 5 perfect)
+    difficulty: str = "just_right"  # too_easy | just_right | too_hard
+    sets_done: Optional[int] = None
+    reps_done: Optional[int] = None
+    note: Optional[str] = None
+
+
+@api_router.post("/workouts/exercise-log")
+async def workout_exercise_log(req: ExerciseLog, user: dict = Depends(get_current_user)):
+    if req.form_rating < 1 or req.form_rating > 5:
+        raise HTTPException(status_code=400, detail="form_rating must be 1..5")
+    if req.difficulty not in {"too_easy", "just_right", "too_hard"}:
+        raise HTTPException(status_code=400, detail="invalid difficulty")
+    sess = await db.workout_sessions.find_one(
+        {"id": req.session_id, "user_id": user["id"]}
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    entry = {
+        "id": str(uuid.uuid4()),
+        "exercise_id": req.exercise_id,
+        "exercise_name": req.exercise_name,
+        "completed": bool(req.completed),
+        "form_rating": int(req.form_rating),
+        "difficulty": req.difficulty,
+        "sets_done": req.sets_done,
+        "reps_done": req.reps_done,
+        "note": req.note,
+        "logged_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # Replace any prior log for the same exercise in this session (so users
+    # can correct a rating without duplicating entries).
+    await db.workout_sessions.update_one(
+        {"id": req.session_id, "user_id": user["id"]},
+        {"$pull": {"exercises_log": {"exercise_id": req.exercise_id}}},
+    )
+    await db.workout_sessions.update_one(
+        {"id": req.session_id, "user_id": user["id"]},
+        {"$push": {"exercises_log": entry}},
+    )
+    sess = await db.workout_sessions.find_one(
+        {"id": req.session_id, "user_id": user["id"]}, {"_id": 0}
+    )
+    return {"entry": entry, "exercises_log": sess.get("exercises_log", [])}
+
+
+@api_router.get("/workouts/session/{session_id}")
+async def workout_session_get(session_id: str, user: dict = Depends(get_current_user)):
+    sess = await db.workout_sessions.find_one(
+        {"id": session_id, "user_id": user["id"]}, {"_id": 0}
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return sess
 
 
 def _feedback_delta(v: str) -> float:

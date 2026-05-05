@@ -393,6 +393,66 @@ frontend:
             No blockers; bug fix confirmed. Calisthenics/home users no longer
             receive barbell exercises.
 
+  - task: "Prescription tutorial enrichment + exercise-log + session detail"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: "NA"
+          agent: "main"
+          comment: |
+            Session 5 additions:
+              1) /api/workouts/prescription now enriches every key_lift +
+                 accessory with `thumb` (Pexels image URL) and `demo_url`
+                 (YouTube search) via _PRESC_META + _enrich_lift().
+              2) NEW POST /api/workouts/exercise-log — validates
+                 form_rating (1-5) and difficulty enum
+                 (too_easy/just_right/too_hard); replaces any prior log for
+                 same (session, exercise) so re-rating doesn't duplicate.
+              3) NEW GET /api/workouts/session/{id} — session detail.
+        -working: true
+          agent: "testing"
+          comment: |
+            All 35/35 assertions PASS via public REACT_APP_BACKEND_URL
+            (https://fitbot-whatsapp.preview.emergentagent.com/api). Suite at
+            /app/exercise_log_test.py. Auth: admin@fitlux.com / Admin@12345
+            (admin bypasses subscription).
+
+            TEST 1 — Prescription enrichment (gym / calisthenics / home):
+              - quiz/submit(gym|calisthenics|home) → 200 ✓
+              - GET /workouts/prescription → 200 ✓
+              - Every key_lift has thumb (http URL) ✓
+              - Every key_lift has demo_url starting with
+                "https://www.youtube.com/results?search_query=" ✓
+              - Every accessory has thumb + demo_url same shape ✓
+              - calisthenics: every key_lift bodyweight=true ✓
+              - home: every key_lift has weight_display ✓
+
+            TEST 2 — POST /api/workouts/exercise-log:
+              - workouts/start → 200 with session_id ✓
+              - First POST {bench, form_rating=4, just_right, 3x5} → 200,
+                entry matches input, exercises_log length=1 ✓
+              - Re-POST same exercise with form_rating=5 → 200,
+                exercises_log length STILL 1 (replaced not duplicated),
+                bench entry's form_rating==5 ✓
+              - POST second exercise (squat) → 200, exercises_log length=2 ✓
+              - form_rating=0 → 400 ✓
+              - form_rating=6 → 400 ✓
+              - difficulty="medium" → 400 ✓
+              - session_id="bogus-id-123" → 404 ✓
+              - No Authorization → 401 ✓
+
+            TEST 3 — GET /api/workouts/session/{id}:
+              - GET valid id → 200 with exercises_log containing
+                bench + squat entries ✓
+              - GET /workouts/session/invalid-uuid → 404 ✓
+              - GET valid id with no Authorization → 401 ✓
+
+            No backend errors observed. Ready to ship.
+
   - task: "Coach briefing + walkthrough endpoints"
     implemented: true
     working: true
@@ -470,8 +530,8 @@ frontend:
 
 metadata:
   created_by: "main_agent"
-  version: "1.3"
-  test_sequence: 3
+  version: "1.4"
+  test_sequence: 4
   run_ui: false
 
 test_plan:
@@ -480,11 +540,43 @@ test_plan:
   test_all: false
   test_priority: "high_first"
 
+agent_communication:
+    -agent: "testing"
+      message: |
+        Session 5 backend additions verified — 35/35 assertions PASS via
+        public REACT_APP_BACKEND_URL. Suite at /app/exercise_log_test.py.
+        Used admin@fitlux.com / Admin@12345 (admin bypasses subscription).
+
+        TEST 1 — Prescription enrichment (gym/calisthenics/home):
+          - quiz/submit each style → 200, GET /workouts/prescription → 200
+          - Every key_lift AND every accessory has a non-empty `thumb`
+            (http URL) and a `demo_url` starting with
+            "https://www.youtube.com/results?search_query=" ✓
+          - calisthenics: every key_lift bodyweight=true ✓
+          - home: every key_lift has weight_display ✓
+
+        TEST 2 — POST /api/workouts/exercise-log:
+          - Start session ✓
+          - Log {bench, form_rating=4, just_right, 3x5} → 200, entry
+            matches input, exercises_log length=1 ✓
+          - Re-log same exercise with form_rating=5 → length still 1
+            (replaced not duplicated), form_rating==5 ✓
+          - Add second exercise (squat) → length=2 ✓
+          - Validation: form_rating=0 → 400, form_rating=6 → 400,
+            difficulty="medium" → 400, bogus session_id → 404, no-auth → 401 ✓
+
+        TEST 3 — GET /api/workouts/session/{id}:
+          - Valid id → 200 with exercises_log containing bench+squat ✓
+          - invalid-uuid → 404 ✓
+          - no-auth → 401 ✓
+
+        Backend logs match expectations (3 POST 200s, 3 POST 400s, 1 POST 404,
+        1 POST 401, 1 GET 200, 1 GET 404, 1 GET 401). No 5xx, no blockers.
+
 # Latest backend test addition:
 # - Level Assessment endpoints (GET /api/level/quiz, POST /api/level/assess,
 #   GET /api/me/level smoke). Suite at /app/level_assess_test.py — 28/28 pass.
 
-agent_communication:
     -agent: "main"
       message: |
         Please verify the new admin endpoints using the admin credentials from
@@ -589,26 +681,75 @@ agent_communication:
              Eat today, Motivate, Supplements). Plan tab shows last 10
              sessions with feedback tags (TOO EASY / JUST RIGHT / TOO HARD).
 
-    -agent: "testing"
+    -agent: "main"
       message: |
-        Session 4 endpoints verified — 49/49 assertions PASS.
-          - Workout prescription style bug fix: gym returns barbell lifts;
-            calisthenics returns zero barbell + every key_lift bodyweight:true;
-            home returns dumbbell moves with weight_display.
-          - /api/workouts/history empty → {sessions:[], total_completed:0};
-            after start+feedback returns session with weight_feedback,
-            reps_feedback, completed:true; ?limit=5 honoured; no-auth → 401.
-          - /api/coach/briefing (admin w/ plan) → full schema (greeting,
-            level, style, time_of_day, prescription_summary {sets,
-            key_lifts, accessories, adjustment_factor}, awaiting_feedback,
-            has_plan:true). Fresh user w/o plan → has_plan:false, greeting
-            still non-empty (fallback path), level defaults to Rookie.
-            no-auth → 401.
-          - /api/coach/walkthrough admin → 200 with reply + session_id
-            starting "coach-"; non-subscriber → 402; reply persisted to
-            /coach/history as assistant message.
-        Real Claude Sonnet 4.5 round-trips observed (~10–20s latency).
-        No 5xx, no blockers. Suite at /app/coach_test.py.
+        Session 5 changes landed:
+          1) Prescription is now enriched: every key_lift and accessory in
+             /api/workouts/prescription has `thumb` + `demo_url` (YouTube
+             search URL) so the workout-session screen can show a matching
+             tutorial video for every exercise. Mapping in `_PRESC_META`
+             covers all gym / calisthenics / home prescription ids.
+          2) NEW endpoint POST /api/workouts/exercise-log
+             body: {session_id, exercise_id, exercise_name,
+                    completed, form_rating(1-5), difficulty, sets_done?,
+                    reps_done?, note?}
+             - validates form_rating range and difficulty enum
+             - replaces any prior log for the same (session, exercise)
+               so users can correct ratings without duplicates
+             - returns the latest exercises_log array
+          3) NEW endpoint GET /api/workouts/session/{id} — session detail.
+          4) UI: pressing "Start workout" on Plan tab now navigates to a
+             new full-screen route /workout-session?sessionId=X. The screen
+             lists every prescribed exercise as a tappable card with thumb
+             + play overlay. Tap → opens a 5-star form rating + 3-button
+             difficulty picker + Tick off CTA. Persists each rating to
+             /workouts/exercise-log. Bottom CTA "Finish & save" submits
+             the aggregated /workouts/feedback and shows a celebratory
+             summary modal (XP earned, exercises done, avg form, next
+             factor). Plan tab reloads on focus so history stays fresh.
+
+    -agent: "main"
+      message: |
+        Please verify the NEW backend additions only — do not re-test
+        previous endpoints. Auth: admin@fitlux.com / Admin@12345.
+
+        TEST 1 — prescription enrichment
+          a) GET /api/workouts/prescription as admin → 200.
+             prescription.key_lifts[i].thumb is a non-empty string URL.
+             prescription.key_lifts[i].demo_url starts with
+             "https://www.youtube.com/results?search_query=".
+             Same for prescription.accessories[i].
+          b) Repeat after submitting quiz with workout_style="calisthenics"
+             — every key_lift still has thumb + demo_url + bodyweight:true.
+          c) Repeat after submitting quiz with workout_style="home"
+             — every key_lift has thumb + demo_url + weight_display.
+
+        TEST 2 — /api/workouts/exercise-log
+          a) POST /api/workouts/start → use returned session_id.
+          b) POST /api/workouts/exercise-log
+             {session_id, exercise_id:"bench", exercise_name:"Bench press",
+              completed:true, form_rating:4, difficulty:"just_right",
+              sets_done:3, reps_done:5}
+             → 200. Response.entry has all fields. Response.exercises_log
+             contains 1 entry.
+          c) POST same payload again with form_rating=5 → exercises_log
+             still has just 1 entry (replaced, not duplicated) and
+             form_rating==5.
+          d) POST a second exercise (exercise_id:"squat") → exercises_log
+             length == 2.
+          e) Validation:
+             - form_rating=0 → 400
+             - form_rating=6 → 400
+             - difficulty="medium" → 400
+             - session_id="bogus" → 404
+          f) No-auth → 401.
+
+        TEST 3 — /api/workouts/session/{id}
+          a) GET /api/workouts/session/<valid id> → 200 with exercises_log.
+          b) GET /api/workouts/session/invalid → 404.
+          c) No-auth → 401.
+
+        Save suite at /app/exercise_log_test.py.
 
         Coverage:
           1) GET /api/level/quiz (no auth) → 200, exactly 5 questions with

@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Sparkles, Flame, Droplet, Play, ChevronDown, ChevronUp, ExternalLink, Dumbbell, Zap, X, Check, History } from "lucide-react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useAuth, api } from "../../src/auth";
 import { colors } from "../../src/theme";
 
@@ -105,6 +105,7 @@ export default function PlanScreen() {
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
 
   if (loading) return <View style={s.center}><ActivityIndicator color={colors.primary} /></View>;
 
@@ -149,32 +150,67 @@ export default function PlanScreen() {
               </View>
             </View>
             {prescription.prescription.key_lifts.map((l: any) => (
-              <View key={l.id} style={s.rxRow}>
-                <Dumbbell color={colors.primary} size={16} />
-                <Text style={s.rxLiftName}>{l.name}</Text>
-                <Text style={s.rxLiftVal}>{l.weight_display} {l.weight_unit} × {l.reps}</Text>
-              </View>
+              <Pressable
+                key={l.id}
+                style={s.rxRow}
+                onPress={() => l.demo_url && Linking.openURL(l.demo_url)}
+                testID={`rx-key-${l.id}`}
+              >
+                {l.thumb ? (
+                  <View style={s.rxThumbWrap}>
+                    <Image source={{ uri: l.thumb }} style={s.rxThumb} />
+                    <View style={s.rxPlay}><Play color="#000" size={9} fill="#000" /></View>
+                  </View>
+                ) : (
+                  <Dumbbell color={colors.primary} size={16} />
+                )}
+                <Text style={s.rxLiftName} numberOfLines={1}>{l.name}</Text>
+                <Text style={s.rxLiftVal}>
+                  {l.bodyweight ? `× ${l.reps}` :
+                   l.weight_display ? `${l.weight_display}${l.weight_unit} × ${l.reps}` :
+                   `× ${l.reps}`}
+                </Text>
+              </Pressable>
             ))}
             {prescription.prescription.accessories.map((a: any) => (
-              <View key={a.id} style={s.rxRow}>
-                <View style={{ width: 16, height: 16, borderRadius: 8, borderColor: colors.border, borderWidth: 1 }} />
-                <Text style={s.rxLiftName}>{a.name}</Text>
+              <Pressable
+                key={a.id}
+                style={s.rxRow}
+                onPress={() => a.demo_url && Linking.openURL(a.demo_url)}
+                testID={`rx-acc-${a.id}`}
+              >
+                {a.thumb ? (
+                  <View style={s.rxThumbWrap}>
+                    <Image source={{ uri: a.thumb }} style={s.rxThumb} />
+                    <View style={s.rxPlay}><Play color="#000" size={9} fill="#000" /></View>
+                  </View>
+                ) : (
+                  <View style={{ width: 16, height: 16, borderRadius: 8, borderColor: colors.border, borderWidth: 1 }} />
+                )}
+                <Text style={s.rxLiftName} numberOfLines={1}>{a.name}</Text>
                 <Text style={s.rxLiftVal}>× {a.reps}</Text>
-              </View>
+              </Pressable>
             ))}
             <TouchableOpacity
               testID="start-workout-btn"
               style={s.rxStartBtn}
               onPress={async () => {
                 try {
-                  const r = await api(token, "/api/workouts/start", { method: "POST" });
-                  setActiveSession(r.session_id);
-                  setShowFeedback(true);
-                } catch (e: any) { Alert.alert("Couldn't start", e.message); }
+                  // Re-use existing session if one is awaiting feedback,
+                  // otherwise start a new one before navigating.
+                  let sid: string | null = prescription.current_session_id || null;
+                  if (!sid) {
+                    const r = await api(token, "/api/workouts/start", { method: "POST" });
+                    sid = r.session_id;
+                  }
+                  router.push({ pathname: "/workout-session", params: { sessionId: sid || "" } });
+                } catch (e: any) {
+                  Alert.alert("Couldn't start", e.message);
+                }
               }}
             >
               <Text style={s.rxStartText}>
-                {prescription.awaiting_feedback ? "Finish & rate this workout" : "Start workout"}
+                {prescription.awaiting_feedback ? "Resume workout" : "Start workout"}
               </Text>
             </TouchableOpacity>
             <Text style={s.rxFoot}>
@@ -393,6 +429,9 @@ const s = StyleSheet.create({
   rxLiftVal: { color: colors.primary, fontWeight: "900", fontSize: 14 },
   rxStartBtn: { backgroundColor: colors.primary, padding: 14, borderRadius: 12, marginTop: 12, alignItems: "center" },
   rxStartText: { color: "#000", fontWeight: "900", fontSize: 15 },
+  rxThumbWrap: { width: 44, height: 36, borderRadius: 8, overflow: "hidden", backgroundColor: "#000", position: "relative" },
+  rxThumb: { width: "100%", height: "100%" },
+  rxPlay: { position: "absolute", right: 2, bottom: 2, width: 16, height: 16, borderRadius: 8, backgroundColor: colors.primary, alignItems: "center", justifyContent: "center" },
   rxFoot: { color: colors.textDim, fontSize: 11, marginTop: 10, textAlign: "center", fontStyle: "italic", lineHeight: 15 },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.85)", justifyContent: "flex-end" },
   modalCard: { backgroundColor: colors.surfaceElevated, padding: 20, borderTopLeftRadius: 24, borderTopRightRadius: 24, borderColor: colors.border, borderWidth: 1 },
