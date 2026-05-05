@@ -113,6 +113,7 @@ class QuizSubmission(BaseModel):
     work_start: str = "09:00"  # ignored if work_schedule == "none"
     work_end: str = "17:00"
     workout_style: str = "gym"  # gym, calisthenics, mixed, home
+    home_equipment: Optional[str] = None  # free-text list of gear (only for home/mixed)
 
 
 class ChatRequest(BaseModel):
@@ -520,6 +521,9 @@ async def generate_ai_plan(quiz: dict, user_name: str) -> str:
              f"from {quiz.get('work_start', '09:00')} to {quiz.get('work_end', '17:00')}"
     )
     style_line = f"Workout style: {quiz.get('workout_style', 'gym')}"
+    eq_line = ""
+    if quiz.get("home_equipment") and quiz.get("workout_style") in {"home", "mixed"}:
+        eq_line = f"Available home equipment: {quiz['home_equipment']}"
     prompt = (
         f"Create a personalized fitness plan for {user_name}.\n"
         f"Age: {quiz['age']} | Gender: {quiz['gender']}\n"
@@ -531,9 +535,12 @@ async def generate_ai_plan(quiz: dict, user_name: str) -> str:
         f"Wake: {quiz['wake_time']} | Sleep: {quiz['sleep_time']}\n"
         f"{work_line}\n"
         f"{style_line}\n"
+        f"{eq_line}\n"
         "IMPORTANT: schedule training and meals AROUND the user's work hours. "
         "Recommend whether morning (before work) or evening (after work) workouts fit best, "
         "and tailor the workout style (gym / calisthenics / home / mixed) accordingly. "
+        "If home equipment is listed above, ONLY recommend exercises that match it (substitute "
+        "anything that requires unavailable gear). "
         "A structured workout schedule with specific exercises is shown separately in the app — "
         "in your reply focus on the OVERVIEW, NUTRITION STRATEGY, DAILY SCHEDULE, and PRO TIPS."
     )
@@ -906,10 +913,14 @@ async def coach_briefing(user: dict = Depends(get_current_user)):
         f"Goal: {quiz.get('goal','general_fitness')}\n"
         f"Level: {lv['name']} {lv['emoji']} ({ctx['xp']} XP)\n"
         f"Style: {ctx['style']}\n"
+        f"Home equipment: {quiz.get('home_equipment') or 'n/a'}\n"
         f"Completed sessions on record: {streak}\n"
         f"Difficulty factor: ×{p['adjustment_factor']}\n"
         f"{trend}\n"
         f"Today's key lifts ({p['sets']} sets): {key_lifts_summary}\n\n"
+        f"If 'Home equipment' is listed and the user is on home/mixed style, swap any "
+        f"prescribed lift that needs unavailable gear with a sensible substitute and call "
+        f"that swap out by name. "
         f"Write the briefing now."
     )
 
@@ -970,8 +981,11 @@ async def coach_walkthrough(user: dict = Depends(require_active_subscription)):
     prompt = (
         f"Client: {name}, level {ctx['level']['name']} {ctx['level']['emoji']}, "
         f"style {ctx['style']}, difficulty ×{p['adjustment_factor']}.\n"
+        f"Home equipment: {ctx['quiz'].get('home_equipment') or 'n/a'}\n"
         f"KEY LIFTS:\n{lifts_block}\n"
         f"ACCESSORIES:\n{acc_block}\n\n"
+        f"If 'Home equipment' is listed and the style is home/mixed, substitute any lift "
+        f"that needs missing gear (call the swap out by name in plain prose). "
         f"Walk them through now."
     )
     try:

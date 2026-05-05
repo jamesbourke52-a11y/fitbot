@@ -11,6 +11,21 @@ import { colors } from "../src/theme";
 
 type Choice = { value: string; label: string };
 
+const COMMON_EQUIPMENT: { id: string; label: string }[] = [
+  { id: "dumbbells",    label: "Dumbbells" },
+  { id: "kettlebell",   label: "Kettlebell" },
+  { id: "barbell",      label: "Barbell + plates" },
+  { id: "bench",        label: "Bench" },
+  { id: "pullup_bar",   label: "Pull-up bar" },
+  { id: "resistance_bands", label: "Resistance bands" },
+  { id: "trx",          label: "TRX / suspension" },
+  { id: "jump_rope",    label: "Jump rope" },
+  { id: "yoga_mat",     label: "Yoga mat" },
+  { id: "rower",        label: "Rower / bike" },
+  { id: "ab_wheel",     label: "Ab wheel" },
+  { id: "rings",        label: "Gymnastic rings" },
+];
+
 // Convert user-friendly time strings like "6pm", "6:30pm", "18:00" to "HH:MM"
 function normalizeTime(input: string): string | null {
   if (!input) return null;
@@ -64,6 +79,10 @@ const STEPS = [
     { value: "calisthenics", label: "Calisthenics (bodyweight)" },
     { value: "mixed", label: "Mix of both" },
     { value: "home", label: "Home — minimal equipment" }] },
+  { key: "home_equipment", title: "What gear do you have at home?",
+    subtitle: "Tap any items you own. Add anything else in the box — the AI coach uses this to suggest substitutes.",
+    type: "equipment",
+    skipUnlessIn: { workout_style: ["home", "mixed"] } },
   { key: "diet_preference", title: "Diet preference", type: "choice", options: [
     { value: "omnivore", label: "Omnivore" }, { value: "vegetarian", label: "Vegetarian" },
     { value: "vegan", label: "Vegan" }, { value: "keto", label: "Keto" }] },
@@ -100,6 +119,30 @@ export default function Quiz() {
 
   const setVal = (v: any) => setAnswers({ ...answers, [current.key]: v });
 
+  // Equipment helpers — answer is { chips: string[], other: string }
+  const eqAnswer = (answers["home_equipment"] || { chips: [], other: "" }) as any;
+  const toggleEq = (id: string) => {
+    const cur: { chips: string[]; other: string } = eqAnswer.chips
+      ? { chips: [...eqAnswer.chips], other: eqAnswer.other || "" }
+      : { chips: [], other: "" };
+    cur.chips = cur.chips.includes(id) ? cur.chips.filter((x) => x !== id) : [...cur.chips, id];
+    setAnswers({ ...answers, home_equipment: cur });
+  };
+  const setEqOther = (txt: string) => {
+    const cur = eqAnswer.chips ? { ...eqAnswer } : { chips: [], other: "" };
+    cur.other = txt;
+    setAnswers({ ...answers, home_equipment: cur });
+  };
+  const equipmentToString = (a: any): string => {
+    if (!a) return "";
+    if (typeof a === "string") return a;
+    const labels = (a.chips || []).map(
+      (id: string) => COMMON_EQUIPMENT.find((e) => e.id === id)?.label || id
+    );
+    const extra = (a.other || "").trim();
+    return [labels.join(", "), extra].filter(Boolean).join(" · ");
+  };
+
   const onLogout = async () => {
     await logout();
     router.replace("/login");
@@ -107,7 +150,10 @@ export default function Quiz() {
 
   const next = async () => {
     setErr("");
-    if (value === undefined || value === "") return setErr("Please answer to continue");
+    // Equipment step: allow empty (= nothing extra). Otherwise require value.
+    if (current.key !== "home_equipment") {
+      if (value === undefined || value === "") return setErr("Please answer to continue");
+    }
 
     // skip subsequent steps that are conditional and shouldn't apply
     let nextStep = step + 1;
@@ -118,6 +164,12 @@ export default function Quiz() {
         const v = (cand.skipIf as any)[k];
         const a = k === current.key ? value : answers[k];
         if (a === v) { nextStep++; continue; }
+      }
+      if (cand.skipUnlessIn) {
+        const k = Object.keys(cand.skipUnlessIn)[0];
+        const allowed: string[] = (cand.skipUnlessIn as any)[k];
+        const a = k === current.key ? value : answers[k];
+        if (!allowed.includes(a)) { nextStep++; continue; }
       }
       break;
     }
@@ -146,6 +198,7 @@ export default function Quiz() {
         height_cm: Number(answers.height_cm),
         weight_kg: Number(answers.weight_kg),
         workout_days_per_week: Number(answers.workout_days_per_week),
+        home_equipment: equipmentToString(answers.home_equipment),
       };
       await api(token, "/api/quiz/submit", { method: "POST", body: JSON.stringify(payload) });
       await refreshUser();
@@ -181,6 +234,43 @@ export default function Quiz() {
 
         <ScrollView style={{ flex: 1 }} contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <Text style={s.title} testID={`quiz-title-${current.key}`}>{current.title}</Text>
+          {(current as any).subtitle ? (
+            <Text style={s.subtitle}>{(current as any).subtitle}</Text>
+          ) : null}
+
+          {current.type === "equipment" && (
+            <View>
+              <View style={s.chipWrap}>
+                {COMMON_EQUIPMENT.map((eq) => {
+                  const sel = (eqAnswer.chips || []).includes(eq.id);
+                  return (
+                    <TouchableOpacity
+                      key={eq.id}
+                      testID={`eq-chip-${eq.id}`}
+                      style={[s.chip, sel && s.chipSelected]}
+                      onPress={() => toggleEq(eq.id)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[s.chipText, sel && s.chipTextSelected]}>
+                        {sel ? "✓ " : ""}{eq.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              <Text style={s.eqOtherLabel}>ANYTHING ELSE?</Text>
+              <TextInput
+                testID="eq-other-input"
+                style={[s.input, { fontSize: 15, padding: 14, fontWeight: "500" }]}
+                value={eqAnswer.other || ""}
+                onChangeText={setEqOther}
+                placeholder="e.g. 20kg dumbbells, light bands…"
+                placeholderTextColor={colors.textDim}
+                multiline
+              />
+              <Text style={s.hint}>It's fine to skip — just hit Continue. The coach uses this to swap any prescribed lift.</Text>
+            </View>
+          )}
 
           {current.type === "choice" && (
             <View style={s.choices}>
@@ -242,7 +332,14 @@ const s = StyleSheet.create({
   progBg: { height: 4, backgroundColor: colors.surface, borderRadius: 2, marginTop: 12 },
   progFill: { height: 4, backgroundColor: colors.primary, borderRadius: 2 },
   scroll: { padding: 24, paddingTop: 32 },
-  title: { color: colors.text, fontSize: 30, fontWeight: "800", marginBottom: 28, lineHeight: 36 },
+  title: { color: colors.text, fontSize: 30, fontWeight: "800", marginBottom: 12, lineHeight: 36 },
+  subtitle: { color: colors.textMuted, fontSize: 14, lineHeight: 20, marginBottom: 22 },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 },
+  chip: { paddingVertical: 11, paddingHorizontal: 14, borderRadius: 999, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
+  chipSelected: { borderColor: colors.primary, backgroundColor: colors.primaryGlow },
+  chipText: { color: colors.text, fontSize: 13, fontWeight: "600" },
+  chipTextSelected: { color: colors.primary, fontWeight: "800" },
+  eqOtherLabel: { color: colors.textDim, fontSize: 11, fontWeight: "800", letterSpacing: 2, marginTop: 18, marginBottom: 8 },
   choices: { gap: 12 },
   choice: { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, padding: 18, borderRadius: 16 },
   choiceSelected: { borderColor: colors.primary, backgroundColor: colors.primaryGlow },

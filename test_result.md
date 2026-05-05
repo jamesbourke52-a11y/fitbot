@@ -783,7 +783,44 @@ agent_communication:
 
     -agent: "testing"
       message: |
-        New session backend verification complete — 49/49 assertions PASS via
+        home_equipment field backend verification complete — 17/17 assertions
+        PASS via public REACT_APP_BACKEND_URL. Suite saved at
+        /app/home_equipment_test.py. Used admin@fitlux.com / Admin@12345.
+
+        TEST 1 — Quiz accepts & persists home_equipment:
+          - POST /api/quiz/submit with home_equipment="Dumbbells, Resistance
+            bands · 20kg pair max" → 200; response.quiz.home_equipment echoes
+            the exact string ✓
+          - GET /api/plan → 200; plan.quiz.home_equipment matches exactly ✓
+
+        TEST 2 — Optional / null / empty / missing key:
+          - POST with home_equipment=null → 200, plan.quiz.home_equipment
+            is None ✓
+          - POST with home_equipment="" → 200, plan.quiz.home_equipment=="" ✓
+          - POST without the key at all → 200 (backwards compatible) ✓
+
+        TEST 3 — home_equipment reaches coach briefing context:
+          - After TEST 1 body, GET /api/coach/briefing → 200 with non-empty
+            greeting (len=576) ✓
+          - LLM greeting (Claude Sonnet 4.5) naturally mentions both
+            "dumbbell" AND "band" — SOFT PASS confirms the equipment string
+            is reaching the prompt. Sample: "opening with dumbbell chest
+            press for five solid sets at 47.5kg…" ✓
+
+        TEST 4 — Smoke, no regressions from schema change:
+          - GET /api/workouts/prescription → 200 ✓
+          - POST /api/workouts/start → 200 (session_id returned) ✓
+          - GET /api/workouts/history?limit=5 → 200 ✓
+
+        No backend errors in supervisor logs. The QuizSubmission model's new
+        Optional[str] field is working as spec'd — accepts string, null,
+        empty string, and absent; persisted to db.plans.quiz; surfaces in
+        /api/plan; and is passed into _build_coach_context → coach prompt.
+        Ready to merge.
+
+    -agent: "testing"
+      message: |
+        [prior] New session backend verification complete — 49/49 assertions PASS via
         public REACT_APP_BACKEND_URL (https://fitbot-whatsapp.preview.emergentagent.com/api).
         Suite saved at /app/coach_test.py.
 
