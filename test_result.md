@@ -528,10 +528,89 @@ frontend:
             fresh) and /coach/walkthrough. No 5xx observed; fallback path
             unused but exists. No blockers.
 
+  - task: "Coach session review (POST /api/coach/review-session/{id})"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+          agent: "testing"
+          comment: |
+            NEW endpoint fully verified — 19/19 assertions PASS via public
+            REACT_APP_BACKEND_URL. Suite saved at
+            /app/coach_review_share_test.py. Auth: admin@fitlux.com /
+            Admin@12345. LLM: Claude Sonnet 4.5 via EMERGENT_LLM_KEY.
+              - POST /workouts/start → 200 with session_id ✓
+              - Logged 3 exercises via /workouts/exercise-log:
+                bench 5/just_right, squat 2/too_hard, row 4/too_easy ✓
+              - POST /coach/review-session/<id> → 200 with:
+                • review = 875-char LLM-generated string ✓
+                • session_id echoes correctly ✓
+                • stats.count == 3 ✓
+                • stats.form_avg == 3.7 (exactly (5+2+4)/3) ✓
+                • stats.best {name:"Bench press", form:5} ✓
+                • stats.worst {name:"Back squat", form:2} ✓
+                • stats.difficulty_mix {too_easy:1, just_right:1,
+                  too_hard:1} ✓
+              - bogus session_id → 404 ✓
+              - no-auth → 401 ✓
+              - Empty session (start + no logs) → 200 with fallback
+                message string (non-empty) and stats.count == 0.
+                NO 500. ✓
+              - Persisted to chat history: GET /coach/history contains
+                the review as an assistant message (exact text match,
+                role=="assistant") ✓
+            LLM latency ~10-15s observed; suite uses 90s HTTP timeout.
+            No 5xx observed in backend logs.
+
+  - task: "Enriched share-card (GET /api/progress/share-card/{days})"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        -working: true
+          agent: "testing"
+          comment: |
+            All 80/80 assertions PASS via public REACT_APP_BACKEND_URL.
+            Suite at /app/coach_review_share_test.py. Auth: admin.
+              1) GET /progress/share-card/30 → 200 with all 8 NEW keys
+                 (xp_gained, xp_start, xp_now, level_start, level_now,
+                 sessions_completed, leveled_up, weight_delta_kg) AND all
+                 8 EXISTING keys (days, unit, name, photos_before,
+                 photos_after, weight_before, weight_after, ready) ✓
+                 - xp_gained=1500, xp_start=0, xp_now=1500 (all int ≥0) ✓
+                 - level_start = Rookie {id:1, name, emoji:🥚} ✓
+                 - level_now  = Beast  {id:5, name, emoji:🦍} ✓
+                 - sessions_completed = 0 (int) ✓
+                 - leveled_up = True (bool) ✓
+                 - weight_delta_kg = None (admin has no weight entries) ✓
+              2) Same schema verified for days=60 and days=90 → 200,
+                 days field matches ✓
+              3) GET /progress/share-card/45 → 400 "days must be 30, 60
+                 or 90" (still rejects non-canonical windows) ✓
+              4) GET /progress/share-card/30 no-auth → 401 ✓
+              5) Ready flag lenient — VERIFIED WORKING. Initially admin
+                 had zero photos, zero weight entries, and zero completed
+                 sessions in the last 30 days (TEST 1's session was
+                 started but never completed — /workouts/exercise-log
+                 and /coach/review-session do NOT mark completed=True;
+                 only /workouts/feedback does). After posting a follow-up
+                 /workouts/feedback to complete a session, /share-card/30
+                 correctly flipped ready → True with sessions_completed=1.
+                 The (photos AND both) OR (weight AND both) OR
+                 (sessions_completed > 0) logic is correct.
+            No 5xx observed. Ready to merge.
+
 metadata:
   created_by: "main_agent"
-  version: "1.4"
-  test_sequence: 4
+  version: "1.5"
+  test_sequence: 5
   run_ui: false
 
 test_plan:
@@ -817,6 +896,51 @@ agent_communication:
         empty string, and absent; persisted to db.plans.quiz; surfaces in
         /api/plan; and is passed into _build_coach_context → coach prompt.
         Ready to merge.
+
+    -agent: "testing"
+      message: |
+        NEW endpoints verified — 99/100 assertions PASS via public
+        REACT_APP_BACKEND_URL. Suite at /app/coach_review_share_test.py.
+
+        TEST 1 — POST /api/coach/review-session/{id} (NEW): 19/19 ✓
+          - start session → log 3 exercises (bench 5/just_right,
+            squat 2/too_hard, row 4/too_easy) → review-session:
+            • 200 with LLM-generated review (875 chars)
+            • session_id echoes
+            • stats.count=3, form_avg=3.7, best="Bench press"/5,
+              worst="Back squat"/2, difficulty_mix each 1
+          - bogus-id → 404, no-auth → 401
+          - Empty session (no logs) → 200 with fallback string,
+            stats.count=0, NO 500
+          - Review persisted to /coach/history as assistant message
+            (exact text match, role="assistant")
+
+        TEST 2 — GET /api/progress/share-card/{days} (ENRICHED): 80/80
+          key checks ✓
+          - /share-card/30, /60, /90 all 200 with ALL 8 new keys
+            (xp_gained, xp_start, xp_now, level_start, level_now,
+            sessions_completed, leveled_up, weight_delta_kg) AND all
+            8 existing keys (days, unit, name, photos_before,
+            photos_after, weight_before, weight_after, ready)
+          - Types correct: int/int/int/dict{name+emoji}/dict{name+emoji}/
+            int/bool/(float|null)
+          - level_start = Rookie 🥚 → level_now = Beast 🦍
+            (leveled_up=true) — admin has xp_now=1500 from earlier
+            level-assess tests
+          - /share-card/45 → 400, /share-card/30 no-auth → 401
+          - Ready flag lenient: initially false because admin had zero
+            photos, zero weight entries, and zero COMPLETED sessions
+            in the 30-day window. IMPORTANT: /workouts/exercise-log
+            and /coach/review-session do NOT mark completed=True;
+            only /workouts/feedback does. Verified separately by
+            calling /workouts/feedback — /share-card/30 then flipped
+            ready→true with sessions_completed=1. Logic works as
+            intended; only the review-request assumption that TEST 1
+            leaves a "completed session" is inaccurate.
+
+        No 5xx, no blockers. Backend logs match expectations
+        (LiteLLM Claude Sonnet 4.5 completions, correct status
+        codes 200/404/401/400 for each step). Ready to merge.
 
     -agent: "testing"
       message: |

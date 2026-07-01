@@ -1933,7 +1933,6 @@ async def workout_feedback(req: WorkoutFeedbackSubmit,
 async def share_card(days: int, user: dict = Depends(get_current_user)):
     if days not in {30, 60, 90}:
         raise HTTPException(status_code=400, detail="days must be 30, 60 or 90")
-    cutoff = datetime.now(timezone.utc).isoformat()
     from datetime import timedelta
     start = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
 
@@ -1944,7 +1943,6 @@ async def share_card(days: int, user: dict = Depends(get_current_user)):
     recent_photos = await db.progress_photos.find(
         {"user_id": user["id"], "logged_at": {"$gte": start}},
         {"_id": 0}).sort("logged_at", -1).to_list(10)
-    # Fallbacks if not enough photos
     if not start_photos:
         earliest = await db.progress_photos.find(
             {"user_id": user["id"]}, {"_id": 0}).sort("logged_at", 1).to_list(3)
@@ -1953,7 +1951,7 @@ async def share_card(days: int, user: dict = Depends(get_current_user)):
         recent_photos = await db.progress_photos.find(
             {"user_id": user["id"]}, {"_id": 0}).sort("logged_at", -1).to_list(3)
 
-    # Stats
+    # Weight before/after
     weight_before = await db.weight_entries.find_one(
         {"user_id": user["id"], "logged_at": {"$lte": start}},
         {"_id": 0}, sort=[("logged_at", -1)])
@@ -1962,6 +1960,28 @@ async def share_card(days: int, user: dict = Depends(get_current_user)):
         {"_id": 0}, sort=[("logged_at", -1)])
     prefs = await db.user_prefs.find_one({"user_id": user["id"]}) or {}
     unit = prefs.get("units", "metric")
+
+    # NEW: XP + level + session stats for the window
+    lvl_doc = await db.user_levels.find_one({"user_id": user["id"]}) or {}
+    xp_now = int(lvl_doc.get("xp", 0))
+    level_now = level_for_xp(xp_now)
+    # Estimate XP at start of window from xp_history
+    hist = await db.xp_history.find(
+        {"user_id": user["id"], "at": {"$lte": start}}, {"_id": 0}
+    ).sort("at", -1).limit(1).to_list(1)
+    xp_start = int(hist[0]["xp_after"]) if hist else 0
+    level_start = level_for_xp(xp_start)
+    sessions_completed = await db.workout_sessions.count_documents({
+        "user_id": user["id"], "completed": True,
+        "completed_at": {"$gte": start},
+    })
+
+    delta_kg = None
+    if weight_before and weight_now:
+        delta_kg = round(
+            float(weight_now["weight_kg"]) - float(weight_before["weight_kg"]), 1
+        )
+
     return {
         "days": days,
         "unit": unit,
@@ -1970,7 +1990,123 @@ async def share_card(days: int, user: dict = Depends(get_current_user)):
         "photos_after": recent_photos,
         "weight_before": weight_before,
         "weight_after": weight_now,
-        "ready": bool(start_photos and recent_photos),
+        "weight_delta_kg": delta_kg,
+        "xp_gained": max(0, xp_now - xp_start),
+        "xp_start": xp_start,
+        "xp_now": xp_now,
+        "level_start": level_start,
+        "level_now": level_now,
+        "sessions_completed": sessions_completed,
+        "leveled_up": level_start["id"] != level_now["id"],
+        "ready": bool((start_photos and recent_photos)
+                      or (weight_before and weight_now)
+                      or sessions_completed > 0),
+    }
+
+
+# ---------- Coach session review ----------
+@api_router.post("/coach/review-session/{session_id}")
+async def coach_review_session(session_id: str, user: dict = Depends(get_current_user)):
+    """AI-analyzes per-exercise ratings from a finished workout and returns a
+    personalized review (what they crushed, one form fix, next-session
+    adjustment, one motivating line). Persists into coach chat history."""
+    sess = await db.workout_sessions.find_one(
+        {"id": session_id, "user_id": user["id"]}, {"_id": 0})
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    logs: list = sess.get("exercises_log") or []
+    if not logs:
+        return {
+            "review": ("You wrapped a session but didn't tick off any exercises. "
+                       "Next time, tap each lift and rate the form + difficulty — "
+                       "that's how I tune the next session for you."),
+            "stats": {"form_avg": 0, "count": 0, "best": None, "worst": None,
+                      "difficulty_mix": {}},
+            "session_id": session_id,
+        }
+
+    # Aggregate stats
+    form_avg = sum(int(l.get("form_rating", 0)) for l in logs) / max(1, len(logs))
+    diff_mix = {"too_easy": 0, "just_right": 0, "too_hard": 0}
+    for l in logs:
+        diff_mix[l.get("difficulty", "just_right")] = diff_mix.get(
+            l.get("difficulty", "just_right"), 0) + 1
+    best = max(logs, key=lambda l: int(l.get("form_rating", 0)))
+    worst = min(logs, key=lambda l: int(l.get("form_rating", 0)))
+
+    # Compact block for the LLM
+    block = "\n".join(
+        f"- {l['exercise_name']}: form {l['form_rating']}/5, "
+        f"difficulty {l['difficulty']}"
+        + (f", sets {l['sets_done']}" if l.get("sets_done") else "")
+        + (f", reps {l['reps_done']}" if l.get("reps_done") else "")
+        + (f" | note: {l['note']}" if l.get("note") else "")
+        for l in logs
+    )
+    name = (user.get("name") or "").split(" ")[0] or "friend"
+
+    system = (
+        "You are FITLUX COACH giving a real, human, post-workout debrief. "
+        "Talk in second person, conversational. NEVER use markdown, bullets, "
+        "or asterisks. Plain paragraphs only. Keep under 130 words. "
+        "Structure: (1) one crisp opening line, (2) call out what they crushed "
+        "(highest form score) by exercise name, (3) ONE specific form fix on "
+        "the lowest form score, (4) what we'll change next session based on "
+        "the difficulty pattern (too_easy → we push harder / just_right → "
+        "hold and progress slowly / too_hard → we drop or regress), "
+        "(5) a punchy closing line."
+    )
+    prompt = (
+        f"Client: {name}\n"
+        f"Session logs:\n{block}\n\n"
+        f"Best form: {best['exercise_name']} ({best['form_rating']}/5).\n"
+        f"Weakest form: {worst['exercise_name']} ({worst['form_rating']}/5).\n"
+        f"Difficulty mix: too_easy={diff_mix['too_easy']}, "
+        f"just_right={diff_mix['just_right']}, too_hard={diff_mix['too_hard']}\n"
+        f"Write the debrief now."
+    )
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"review-{user['id']}-{session_id}",
+            system_message=system,
+        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        review = await chat.send_message(UserMessage(text=prompt))
+    except Exception as e:
+        logger.warning(f"[coach:review-session] llm fail, fallback: {e}")
+        # Deterministic fallback so we never 500
+        dominant = max(diff_mix.items(), key=lambda kv: kv[1])[0]
+        next_move = ("we'll add reps or weight next session"
+                     if dominant == "too_easy"
+                     else "we'll pull back the load next session"
+                     if dominant == "too_hard"
+                     else "we'll hold this load and grind the reps")
+        review = (
+            f"Good work, {name}. Your best today was {best['exercise_name']} "
+            f"at {best['form_rating']}/5 form — that's dialled in. Focus on "
+            f"{worst['exercise_name']} next time: slow the eccentric, tighten "
+            f"the setup. Based on the difficulty pattern, {next_move}. Keep it."
+        )
+
+    # Persist into coach chat history so it appears in the Coach tab
+    sid = f"coach-{user['id']}"
+    await db.chat_messages.insert_one({
+        "user_id": user["id"], "session_id": sid, "role": "assistant",
+        "text": review, "at": datetime.now(timezone.utc).isoformat(),
+        "kind": "session_review", "workout_session_id": session_id,
+    })
+
+    return {
+        "review": review,
+        "stats": {
+            "form_avg": round(form_avg, 1),
+            "count": len(logs),
+            "best": {"name": best["exercise_name"], "form": best["form_rating"]},
+            "worst": {"name": worst["exercise_name"], "form": worst["form_rating"]},
+            "difficulty_mix": diff_mix,
+        },
+        "session_id": session_id,
     }
 
 

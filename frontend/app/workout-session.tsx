@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   X, Play, Star, Check, ChevronDown, ChevronUp,
-  Dumbbell, Flame, Trophy, ArrowRight,
+  Dumbbell, Flame, Trophy, ArrowRight, Sparkles,
 } from "lucide-react-native";
 import { useAuth, api } from "../src/auth";
 import { colors } from "../src/theme";
@@ -52,6 +52,8 @@ export default function WorkoutSessionScreen() {
   const [finishing, setFinishing] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
   const [summary, setSummary] = useState<any>(null);
+  const [coachReview, setCoachReview] = useState<any>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -159,6 +161,17 @@ export default function WorkoutSessionScreen() {
         difficultyMix: counts,
       });
       setShowSummary(true);
+
+      // Fire the AI coach review in the background (Claude ~15s)
+      setReviewLoading(true);
+      try {
+        const rev = await api(token, `/api/coach/review-session/${sessionId}`, { method: "POST" });
+        setCoachReview(rev);
+      } catch (e) {
+        // Non-fatal — summary modal still works without the review.
+      } finally {
+        setReviewLoading(false);
+      }
     } catch (e: any) {
       Alert.alert("Couldn't finish", e.message);
     } finally {
@@ -250,6 +263,8 @@ export default function WorkoutSessionScreen() {
       <SummaryModal
         visible={showSummary}
         summary={summary}
+        review={coachReview}
+        reviewLoading={reviewLoading}
         onClose={() => {
           setShowSummary(false);
           router.replace("/(tabs)/plan");
@@ -398,11 +413,12 @@ function ExerciseCard({
   );
 }
 
-function SummaryModal({ visible, summary, onClose }: any) {
+function SummaryModal({ visible, summary, review, reviewLoading, onClose }: any) {
   if (!summary) return null;
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={s.modalBg}>
+        <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: "flex-end" }}>
         <View style={s.modalCard}>
           <View style={s.modalGlow} />
           <View style={s.modalHead}>
@@ -428,13 +444,48 @@ function SummaryModal({ visible, summary, onClose }: any) {
             </View>
           </View>
 
-          <Text style={s.modalMessage}>{summary.message}</Text>
+          {/* Coach's review — the star of the summary */}
+          <View style={s.reviewCard}>
+            <View style={s.reviewHead}>
+              <Sparkles color={colors.primary} size={14} />
+              <Text style={s.reviewKicker}>FITLUX COACH · DEBRIEF</Text>
+            </View>
+            {reviewLoading ? (
+              <View style={{ paddingVertical: 12, flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <ActivityIndicator color={colors.primary} size="small" />
+                <Text style={s.reviewLoading}>Coach is reviewing your ratings…</Text>
+              </View>
+            ) : review?.review ? (
+              <>
+                <Text style={s.reviewBody}>{review.review}</Text>
+                {review.stats?.best && review.stats?.worst ? (
+                  <View style={s.reviewChipRow}>
+                    <View style={[s.reviewChip, { borderColor: colors.success + "66", backgroundColor: colors.success + "1A" }]}>
+                      <Text style={[s.reviewChipLabel, { color: colors.success }]}>BEST</Text>
+                      <Text style={s.reviewChipText} numberOfLines={1}>
+                        {review.stats.best.name} · {review.stats.best.form}/5
+                      </Text>
+                    </View>
+                    <View style={[s.reviewChip, { borderColor: colors.error + "66", backgroundColor: colors.error + "1A" }]}>
+                      <Text style={[s.reviewChipLabel, { color: colors.error }]}>FOCUS</Text>
+                      <Text style={s.reviewChipText} numberOfLines={1}>
+                        {review.stats.worst.name} · {review.stats.worst.form}/5
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <Text style={s.reviewLoading}>{summary.message}</Text>
+            )}
+          </View>
 
           <TouchableOpacity style={s.modalBtn} onPress={onClose} activeOpacity={0.85}>
             <Text style={s.modalBtnText}>Back to plan</Text>
             <ArrowRight color="#000" size={16} />
           </TouchableOpacity>
         </View>
+        </ScrollView>
       </View>
     </Modal>
   );
@@ -506,6 +557,20 @@ const s = StyleSheet.create({
   statSlash: { color: colors.textMuted, fontSize: 12, fontWeight: "700" },
   statLabel: { color: colors.textDim, fontSize: 9, letterSpacing: 1.5, fontWeight: "900", marginTop: 4 },
   modalMessage: { color: colors.textMuted, fontSize: 13, lineHeight: 19, marginBottom: 20, fontStyle: "italic" },
+  reviewCard: {
+    backgroundColor: colors.surface, padding: 16, borderRadius: 16,
+    borderColor: colors.primary, borderWidth: 1, marginBottom: 20,
+  },
+  reviewHead: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  reviewKicker: { color: colors.primary, fontSize: 10, letterSpacing: 2, fontWeight: "900" },
+  reviewLoading: { color: colors.textMuted, fontSize: 12, fontStyle: "italic" },
+  reviewBody: { color: colors.text, fontSize: 13, lineHeight: 20 },
+  reviewChipRow: { flexDirection: "row", gap: 8, marginTop: 12 },
+  reviewChip: {
+    flex: 1, borderRadius: 12, padding: 10, borderWidth: 1,
+  },
+  reviewChipLabel: { fontSize: 9, letterSpacing: 1.5, fontWeight: "900" },
+  reviewChipText: { color: colors.text, fontSize: 11, fontWeight: "700", marginTop: 3 },
   modalBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: colors.primary, padding: 14, borderRadius: 999 },
   modalBtnText: { color: "#000", fontWeight: "900", fontSize: 14 },
 });

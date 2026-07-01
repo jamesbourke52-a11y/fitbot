@@ -479,8 +479,28 @@ function ShareCardModal({ visible, token, unit, onClose }: any) {
   useEffect(() => { if (visible) load(30); }, [visible]);
 
   const share = async () => {
+    if (!data) return;
+    // Build a rich, share-worthy caption using the new backend stats.
+    const bits: string[] = [`My ${days}-day FitLux transformation 💪`];
+    if (data.weight_delta_kg !== null && data.weight_delta_kg !== undefined) {
+      const dKg = data.weight_delta_kg;
+      const d = unit === "imperial" ? dKg * 2.2046 : dKg;
+      const u = unit === "imperial" ? "lb" : "kg";
+      bits.push(`⚖️ ${d >= 0 ? "+" : ""}${d.toFixed(1)} ${u}`);
+    }
+    if (data.sessions_completed > 0) {
+      bits.push(`🔥 ${data.sessions_completed} workouts crushed`);
+    }
+    if (data.xp_gained > 0) {
+      bits.push(`⚡ +${data.xp_gained} XP`);
+    }
+    if (data.leveled_up) {
+      bits.push(`🎖 Leveled up: ${data.level_start?.emoji} → ${data.level_now?.emoji} ${data.level_now?.name}`);
+    }
+    bits.push("");
+    bits.push("fitlux.fitness");
     try {
-      await Share.share({ message: `My ${days}-day FitLux transformation 💪 fitlux.fitness` });
+      await Share.share({ message: bits.join("\n") });
     } catch {}
   };
 
@@ -488,7 +508,9 @@ function ShareCardModal({ visible, token, unit, onClose }: any) {
   const afterImg = data?.photos_after?.[0]?.image;
   const weightBefore = data?.weight_before;
   const weightAfter = data?.weight_after;
-  const deltaKg = (weightBefore && weightAfter) ? (weightAfter.weight_kg - weightBefore.weight_kg) : null;
+  const deltaKg = data?.weight_delta_kg ?? (
+    (weightBefore && weightAfter) ? (weightAfter.weight_kg - weightBefore.weight_kg) : null
+  );
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -503,34 +525,69 @@ function ShareCardModal({ visible, token, unit, onClose }: any) {
             ))}
           </View>
           {loading ? <ActivityIndicator color={colors.primary} /> : data && (
-            <View style={s.posterCard}>
-              <Text style={s.posterKicker}>FITLUX · {days} DAY TRANSFORMATION</Text>
-              <Text style={s.posterName}>{data.name}</Text>
-              <View style={s.posterPhotos}>
-                <View style={s.posterPhotoWrap}>
-                  <Text style={s.posterLabel}>BEFORE</Text>
-                  {beforeImg ? <Image source={{ uri: beforeImg }} style={s.posterImg} /> : <View style={[s.posterImg, s.posterPlaceholder]}><Text style={s.emptyText}>Add photo</Text></View>}
+            <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ paddingBottom: 12 }}>
+              <View style={s.posterCard}>
+                <Text style={s.posterKicker}>FITLUX · {days} DAY TRANSFORMATION</Text>
+                <Text style={s.posterName}>{data.name}</Text>
+
+                {/* Level jump banner */}
+                {data.leveled_up && (
+                  <View style={s.levelBanner}>
+                    <Text style={s.levelBannerText}>
+                      🎖 LEVEL UP · {data.level_start?.emoji} {data.level_start?.name} → {data.level_now?.emoji} {data.level_now?.name}
+                    </Text>
+                  </View>
+                )}
+
+                <View style={s.posterPhotos}>
+                  <View style={s.posterPhotoWrap}>
+                    <Text style={s.posterLabel}>BEFORE</Text>
+                    {beforeImg ? <Image source={{ uri: beforeImg }} style={s.posterImg} /> : <View style={[s.posterImg, s.posterPlaceholder]}><Text style={s.emptyText}>Add photo</Text></View>}
+                  </View>
+                  <View style={s.posterPhotoWrap}>
+                    <Text style={s.posterLabel}>NOW</Text>
+                    {afterImg ? <Image source={{ uri: afterImg }} style={s.posterImg} /> : <View style={[s.posterImg, s.posterPlaceholder]}><Text style={s.emptyText}>Add photo</Text></View>}
+                  </View>
                 </View>
-                <View style={s.posterPhotoWrap}>
-                  <Text style={s.posterLabel}>NOW</Text>
-                  {afterImg ? <Image source={{ uri: afterImg }} style={s.posterImg} /> : <View style={[s.posterImg, s.posterPlaceholder]}><Text style={s.emptyText}>Add photo</Text></View>}
+
+                {/* Rich stat grid — always shown */}
+                <View style={s.posterGrid}>
+                  {deltaKg !== null && deltaKg !== undefined && (
+                    <View style={s.posterStatBox}>
+                      <Text style={s.posterStatVal}>
+                        {deltaKg >= 0 ? "+" : ""}
+                        {(unit === "imperial" ? deltaKg * 2.2046 : deltaKg).toFixed(1)}
+                      </Text>
+                      <Text style={s.posterStatLabel}>{unit === "metric" ? "KG Δ" : "LB Δ"}</Text>
+                    </View>
+                  )}
+                  {(data.sessions_completed ?? 0) > 0 && (
+                    <View style={s.posterStatBox}>
+                      <Text style={s.posterStatVal}>{data.sessions_completed}</Text>
+                      <Text style={s.posterStatLabel}>WORKOUTS</Text>
+                    </View>
+                  )}
+                  {(data.xp_gained ?? 0) > 0 && (
+                    <View style={s.posterStatBox}>
+                      <Text style={s.posterStatVal}>+{data.xp_gained}</Text>
+                      <Text style={s.posterStatLabel}>XP</Text>
+                    </View>
+                  )}
+                  <View style={s.posterStatBox}>
+                    <Text style={s.posterStatVal}>{data.level_now?.emoji}</Text>
+                    <Text style={s.posterStatLabel}>{(data.level_now?.name || "").toUpperCase()}</Text>
+                  </View>
                 </View>
+
+                <Text style={s.posterFoot}>fitlux.fitness</Text>
               </View>
-              {deltaKg !== null && (
-                <View style={s.posterStat}>
-                  <Text style={s.posterStatLabel}>WEIGHT Δ</Text>
-                  <Text style={s.posterStatVal}>
-                    {deltaKg >= 0 ? "+" : ""}
-                    {(unit === "imperial" ? deltaKg * 2.2046 : deltaKg).toFixed(1)} {unit === "metric" ? "kg" : "lb"}
-                  </Text>
-                </View>
-              )}
-              <Text style={s.posterFoot}>fitlux.fitness</Text>
-            </View>
+            </ScrollView>
           )}
           <TouchableOpacity style={s.saveBtn} onPress={share} disabled={!data?.ready}>
             <Share2 color="#000" size={18} />
-            <Text style={s.saveBtnText}>{data?.ready ? "Share" : "Need before + after photos"}</Text>
+            <Text style={s.saveBtnText}>
+              {data?.ready ? "Share progress" : "Log a workout or weight to enable"}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -634,6 +691,18 @@ const s = StyleSheet.create({
   posterPlaceholder: { alignItems: "center", justifyContent: "center" },
   posterStat: { marginTop: 14, alignItems: "center" },
   posterStatLabel: { color: colors.textDim, fontSize: 10, fontWeight: "800", letterSpacing: 2 },
-  posterStatVal: { color: colors.primary, fontSize: 30, fontWeight: "900", marginTop: 4 },
+  posterStatVal: { color: colors.primary, fontSize: 22, fontWeight: "900", marginTop: 2 },
   posterFoot: { color: colors.textDim, fontSize: 11, textAlign: "center", marginTop: 14, letterSpacing: 2 },
+  levelBanner: {
+    marginTop: 12, backgroundColor: colors.primaryGlow, borderColor: colors.primary,
+    borderWidth: 1, borderRadius: 12, padding: 10, alignItems: "center",
+  },
+  levelBannerText: { color: colors.primary, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  posterGrid: {
+    flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 14, justifyContent: "space-between",
+  },
+  posterStatBox: {
+    minWidth: "47%", flexGrow: 1, backgroundColor: "rgba(212,175,55,0.07)",
+    borderColor: colors.border, borderWidth: 1, borderRadius: 12, padding: 12, alignItems: "flex-start",
+  },
 });
