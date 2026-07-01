@@ -42,9 +42,12 @@ export default function Paywall() {
   const subscribe = async () => {
     setBusy(true);
     try {
-      const origin = Platform.OS === "web" && typeof window !== "undefined"
+      // Deployment-safe: on web use the browser origin directly; on native the
+      // origin is not used by the checkout redirect (native returns via deep
+      // link handled by the Stripe session's success/cancel URLs on backend).
+      const origin = (typeof window !== "undefined" && window.location && window.location.origin)
         ? window.location.origin
-        : BACKEND;
+        : "";
       const data = await api(token, "/api/subscription/checkout", {
         method: "POST",
         body: JSON.stringify({
